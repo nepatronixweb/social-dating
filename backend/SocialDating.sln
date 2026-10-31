@@ -1,0 +1,36 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{176E05B8-070F-440C-BD3D-87365A3CA433}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SocialDating.Api", "src\SocialDating.Api\SocialDating.Api.csproj", "{2B4C3C71-A999-4710-8B9D-ED36463C9EBC}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{1967B81B-7401-489F-86A8-81BB7C114694}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SocialDating.Api.Tests", "tests\SocialDating.Api.Tests\SocialDating.Api.Tests.csproj", "{36991C4C-7041-4D11-A3DC-55F32600C5A7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2B4C3C71-A999-4710-8B9D-ED36463C9EBC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B4C3C71-A999-4710-8B9D-ED36463C9EBC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B4C3C71-A999-4710-8B9D-ED36463C9EBC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2B4C3C71-A999-4710-8B9D-ED36463C9EBC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{36991C4C-7041-4D11-A3DC-55F32600C5A7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{36991C4C-7041-4D11-A3DC-55F32600C5A7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{36991C4C-7041-4D11-A3DC-55F32600C5A7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{36991C4C-7041-4D11-A3DC-55F32600C5A7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{2B4C3C71-A999-4710-8B9D-ED36463C9EBC} = {176E05B8-070F-440C-BD3D-87365A3CA433}
+		{36991C4C-7041-4D11-A3DC-55F32600C5A7} = {1967B81B-7401-489F-86A8-81BB7C114694}
+	EndGlobalSection
+EndGlobal
