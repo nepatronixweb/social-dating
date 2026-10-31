@@ -52,3 +52,18 @@ payments, referral payouts, withdrawal payouts. Production must keep
 # Local production-shaped API (copies user-secrets into process env vars)
 pwsh scripts/run_api_production.ps1
 ```
+
+## GitHub: Neon preview branches
+
+Pull requests create a temporary Neon branch via
+`.github/workflows/neon-branch.yml`, apply EF migrations, then delete the
+branch when the PR closes.
+
+Set these on the GitHub repository (Settings → Secrets and variables):
+
+| Kind | Name | Value |
+|------|------|--------|
+| Secret | `NEON_API_KEY` | Neon API key (Console → Account settings → API keys) |
+| Variable | `NEON_PROJECT_ID` | Neon project id (e.g. `bold-voice-45882595`) |
+
+Do not commit connection strings or API keys.
