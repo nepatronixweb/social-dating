@@ -113,8 +113,7 @@ void main() {
       await _open(tester, AppRoutes.welcome);
 
       expect(find.byType(BrandMark), findsWidgets);
-      expect(find.text(AppConstants.appName), findsWidgets);
-      expect(find.textContaining('REAL PEOPLE'), findsOneWidget);
+      expect(find.text(AppConstants.appName), findsNothing);
       expect(find.textContaining('Dating with'), findsOneWidget);
       expect(find.textContaining('intention.'), findsOneWidget);
       expect(find.textContaining('real conversations'), findsOneWidget);

@@ -24,12 +24,7 @@ void main() {
         ),
       );
       expect((mark.image as AssetImage).assetName, BrandMark.assetPath);
-      expect(find.text(AppConstants.appName), findsOneWidget);
-      expect(
-        find.textContaining('Find meaningful connections'),
-        findsOneWidget,
-      );
-      expect(find.textContaining('REAL PEOPLE'), findsOneWidget);
+      expect(find.text(AppConstants.appName), findsNothing);
 
       // Let the splash timer finish so no timers are pending.
       await tester.pump(AppConstants.splashDuration);

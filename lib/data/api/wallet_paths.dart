@@ -8,4 +8,5 @@ abstract final class WalletApiPaths {
   static String withdrawal(String id) => '/v1/wallet/withdrawals/$id';
   static String cancelWithdrawal(String id) =>
       '/v1/wallet/withdrawals/$id/cancel';
+  static const redeemPromo = '/v1/wallet/promo-codes/redeem';
 }

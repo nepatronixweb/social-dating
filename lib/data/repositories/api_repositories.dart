@@ -12,6 +12,7 @@ import '../api/matching_paths.dart';
 import '../api/notification_paths.dart';
 import '../api/page.dart';
 import '../api/referral_paths.dart';
+import '../api/safety_paths.dart';
 import '../api/subscription_paths.dart';
 import '../api/wallet_paths.dart';
 import '../dto/account_dtos.dart';
@@ -451,6 +452,29 @@ class ApiWalletRepository implements WalletRepository {
     );
   }
 
+  @override
+  Future<({int points, String bucket, int spendablePoints})> redeemPromo(
+    String code,
+  ) {
+    return _withSession(
+      () => _dio.post<dynamic>(
+        WalletApiPaths.redeemPromo,
+        data: {'code': code.trim()},
+      ),
+      (response) {
+        final map = response.data;
+        if (map is! Map) {
+          throw const ValidationFailure('Unexpected promo response.');
+        }
+        return (
+          points: (map['points'] as num?)?.toInt() ?? 0,
+          bucket: map['bucket'] as String? ?? 'promotional',
+          spendablePoints: (map['spendablePoints'] as num?)?.toInt() ?? 0,
+        );
+      },
+    );
+  }
+
   Future<T> _withSession<T>(
     Future<Response<dynamic>> Function() send,
     T Function(Response<dynamic> response) read,
@@ -868,7 +892,15 @@ class ApiReferralRepository implements ReferralRepository {
 }
 
 class ApiSettingsRepository implements SettingsRepository {
-  const ApiSettingsRepository();
+  ApiSettingsRepository({
+    required ApiClient client,
+    required TokenStorage tokens,
+  }) : _dio = client.dio,
+       _tokens = tokens;
+
+  final Dio _dio;
+  final TokenStorage _tokens;
+  SafetyReport? _lastReport;
 
   @override
   Future<UserPreferences> fetchPreferences() async =>
@@ -884,12 +916,79 @@ class ApiSettingsRepository implements SettingsRepository {
     String details = '',
     String? attachmentAsset,
     String? subjectName,
-  }) async => _unconfirmed('safety.submitReport');
+    String? reportedAccountId,
+  }) {
+    final targetId = reportedAccountId?.trim();
+    if (targetId == null || targetId.isEmpty) {
+      throw const ValidationFailure(
+        'Pick someone to report from their profile or chat.',
+      );
+    }
+    return _withSession(
+      () => _dio.post<dynamic>(
+        SafetyApiPaths.reports,
+        data: {
+          'reportedAccountId': targetId,
+          'category': category,
+          'details': details.trim(),
+        },
+      ),
+      (response) {
+        final report = SafetyReportDto.fromJson(response.data).toDomain();
+        _lastReport = report;
+        return report;
+      },
+    );
+  }
 
   @override
-  Future<SafetyReport?> lastReport() async => _unconfirmed('safety.lastReport');
+  Future<SafetyReport?> lastReport() async => _lastReport;
 
   @override
   Future<void> requestAccountDeletion() async =>
       _unconfirmed('account.requestDeletion');
+
+  Future<T> _withSession<T>(
+    Future<Response<dynamic>> Function() send,
+    T Function(Response<dynamic> response) read,
+  ) async {
+    try {
+      return read(await send());
+    } on DioException catch (error) {
+      if (error.response?.statusCode != 401) {
+        throw AppFailure.from(error);
+      }
+      await _refresh();
+      try {
+        return read(await send());
+      } catch (retryError) {
+        throw AppFailure.from(retryError);
+      }
+    } catch (error) {
+      throw AppFailure.from(error);
+    }
+  }
+
+  Future<void> _refresh() async {
+    final refresh = await _tokens.readRefreshToken();
+    if (refresh == null || refresh.isEmpty) {
+      throw const UnauthorizedFailure();
+    }
+    try {
+      final response = await _dio.post<dynamic>(
+        AuthApiPaths.refresh,
+        data: RefreshRequestDto(refreshToken: refresh).toJson(),
+      );
+      final dto = AuthVerifyResponseDto.fromJson(response.data);
+      final access = dto.accessToken;
+      final next = dto.refreshToken;
+      if (access == null || next == null) {
+        throw const UnauthorizedFailure();
+      }
+      await _tokens.writeSession(accessToken: access, refreshToken: next);
+    } catch (error) {
+      await _tokens.clear();
+      throw AppFailure.from(error);
+    }
+  }
 }

@@ -154,11 +154,6 @@ void main() {
       await tester.enterText(find.byType(TextField), 'See you Friday');
       await tester.pump();
       await tester.tap(find.byTooltip('Send message'));
-      await tester.pump();
-      final pay = find.text('Pay NPR 0.30 and send');
-      await tester.ensureVisible(pay);
-      await tester.pump();
-      await tester.tap(pay);
       await pumpFrames(tester);
 
       expect(find.text('See you Friday'), findsOneWidget);

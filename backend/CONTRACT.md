@@ -147,6 +147,17 @@ and stored as the matching new name.
 Returns account state only (no bio/city/gender echo). Account JSON still
 never includes `phone` or `birthDate`.
 
+### `GET /v1/me/personal-info` / `PUT /v1/me/personal-info`
+
+Bearer required. Extended Personal Information (appearance, lifestyle,
+education, dating preferences, personality, prompts). Tables:
+`user_profiles`, `user_lifestyles`, `user_preferences`,
+`user_personalities`, `user_prompts`, `user_verifications`.
+
+`PUT` merges fields. Never returns a full phone — only a masked
+`phoneLabel`. Birth date is accepted once and never echoed as a full
+private value beyond ISO date for the owner’s own GET.
+
 ## Discovery
 
 Bearer required. Public profiles include age (from the private birth date),
@@ -161,6 +172,13 @@ UTC+05:45) charge 10 paisa from the point wallet after confirm. Other
 genders have no daily cap. Incomplete profiles get 5 preview swipes.
 Female, LGBTQ+ and other accounts have every Premium feature at no charge.
 Only male accounts can buy a subscription. Payments are not enabled yet.
+
+Males without a paid subscription receive **100 promotional points once per
+Nepal day** (`dailyFreePoints`). Super like (`direction: "super"`), discovery
+direct message (`POST /v1/discovery/message`), and rewind
+(`POST /v1/discovery/undo` with `confirmedPaid`) each cost **100 points** for
+those males; the debit is credited to the seeded admin wallet
+(`+9779800000000`). Complimentary accounts are not charged for those actions.
 
 Development seeds eight demo profiles (`+9779811000001` … `0008`) so a new
 database has a deck.
@@ -189,10 +207,26 @@ that further. Query: `minAge`, `maxAge`, `showMe`, `verifiedOnly`
 { "profileId": "...", "direction": "right", "confirmedPaid": false }
 ```
 
-`200` with `quota`, optional `matchedProfile` on a mutual like, `chargedPaisa`
-(10 on a confirmed extra male swipe, else 0), optional `rejection`
+`direction` may be `left`, `right`, or `super`. Super likes count as likes for
+matching and do not consume the free daily swipe quota.
+
+`200` with `quota` (includes `actionPricePaisa`, normally 100), optional
+`matchedProfile` and `conversationId` (match id) on a mutual like,
+`chargedPaisa` (10 on a confirmed extra male swipe, 100 on a confirmed male
+super like, else 0), optional `rejection`
 (`profileIncomplete` / `insufficientFunds` / `paymentRequired`).
-Undo refunds a paid extra swipe.
+Undo refunds a paid extra swipe and, for unsubscribed males, charges the
+rewind fee to admin when `confirmedPaid` is true.
+
+### `POST /v1/discovery/message`
+
+```json
+{ "profileId": "...", "confirmedPaid": false }
+```
+
+Opens (or reuses) a match conversation with that profile. Unsubscribed males
+pay 100 points to admin. `200` with `quota`, optional `conversationId`,
+`chargedPaisa`, optional `rejection`.
 
 ### `POST /v1/discovery/undo`
 
@@ -302,8 +336,11 @@ Does **not** count toward the six profile-album slots. Open chats only.
 allowed when `imageId` is present. `imageId` must belong to the sender
 and be a chat upload, not a profile album photo.
 
+`confirmedPaid` is accepted for compatibility but is not required: eligible
+word fees are charged on send when the wallet can cover them.
+
 `200` `SendOutcome`: optional `message`, optional `rejection`
-(`empty` / `tooLong` / `paymentRequired` / `insufficientFunds`),
+(`empty` / `tooLong` / `insufficientFunds`),
 optional `quote`, `chargedPaisa`, `balancePaisa` after the send.
 
 ### `POST /v1/chats/{conversationId}/read` / `mute` / `hide`
@@ -365,6 +402,15 @@ the hold. Status is `recorded`, `cancelled` or `declined` — never paid.
 
 `pendingWithdrawalPoints` is the sum of open (`recorded`) holds.
 `earnedPoints` is already net of those holds.
+
+### `POST /v1/wallet/promo-codes/redeem`
+
+```json
+{ "code": "WELCOME100" }
+```
+
+`200` with `{ points, bucket, spendablePoints }`. One redemption per account
+per code. Promotional bucket is not withdrawable.
 
 ### `GET /v1/wallet/transactions`
 
@@ -542,8 +588,11 @@ exists.
 
 ### `GET /v1/subscription/plans`
 
+Named Premium plan cards are removed. Male checkout is amount-only on the
+client, so this list is empty until a payment provider defines SKUs.
+
 ```json
-{ "items": [ { "id": "npr-100", "name": "Premium", "pricePaisa": 10000, "periodLabel": "one-time", "features": ["See who likes you"], "isPopular": true, "savingsLabel": null, "isRecurring": false, "priceLabel": "NPR 100.00" } ] }
+{ "items": [] }
 ```
 
 ### `GET /v1/subscription/history`
@@ -572,7 +621,207 @@ profile photos, 5 MB each. Chat uploads use the same types and size, the
 same signed GET, and do not count toward the album. Files are stored on
 the API host. `url` is a relative signed path
 (`/v1/media/{id}?e={unix}&s={hmac}`) so `NetworkImage` does not need a Bearer
-header. The HMAC uses the JWT signing key. There is no moderation queue yet.
+header. The HMAC uses the JWT signing key.
+
+## Safety reports
+
+Bearer required. Creates a row in the staff moderation queue.
+
+### `POST /v1/safety/reports`
+
+```json
+{ "reportedAccountId": "...", "category": "Harassment", "details": "optional" }
+```
+
+`200` with `{ id, category, details, subjectName, reportedAccountId, createdAt }`.
+Cannot report yourself or the system admin ledger account. `category` is
+required (2–64 chars).
+
+## Staff admin (`/v1/admin`)
+
+Separate staff JWT (`typ=staff`). Not the phone OTP user flow. Development
+bootstraps a superadmin when no staff exist (`Admin:BootstrapEmail` /
+`BootstrapPassword` in appsettings).
+
+### `POST /v1/admin/auth/login`
+
+```json
+{ "email": "admin@local.test", "password": "..." }
+```
+
+`200` with `{ accessToken, expiresAt, staff }`.
+
+### Authenticated staff routes
+
+All require `Authorization: Bearer` staff token.
+
+**Soft RBAC** (claim `staff_role`):
+
+| Role | Writes |
+| --- | --- |
+| `support` / `trust` | warn, reset swipe day, resolve reports (warn/dismiss/investigating; not ban/suspend) |
+| `finance` | withdrawals, refunds, adjust points, clawbacks, complimentary Premium |
+| `superadmin` | all writes + staff invite/reset/disable/role + ban/suspend/clear photos/unmatch |
+
+Reads are available to every staff role.
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/v1/admin/me` | Staff profile |
+| GET | `/v1/admin/overview` | Live KPIs (24h activity, funnels, alerts, kill snapshot), admin wallet, Nepal day |
+| GET | `/v1/admin/ops/overview` | Same as `/overview` |
+| GET | `/v1/admin/marketplace/health` | Discoverable gender mix, deck-empty risk, 24h swipe/like/match funnel |
+| GET | `/v1/admin/config` | Remote pricing + kill switches |
+| PUT | `/v1/admin/config` | Superadmin — update pricing / kills (`AppRuntimeSettings`) |
+| GET | `/v1/admin/moderation/photos?filter=` | Photo queue (`pending` / `approved` / `rejected` / `hidden` / `recent`) |
+| POST | `/v1/admin/moderation/photos/{id}/visibility` | `{ hidden, note? }` support write — sets `Photo.HiddenAt` |
+| POST | `/v1/admin/moderation/photos/{id}/review` | `{ status: pending\|approved\|rejected, reason?, note? }` — reject reasons: nudity/fake/underage/spam/other |
+| GET | `/v1/admin/moderation/messages?q=` | Recent chat messages (optional body search) |
+| POST | `/v1/admin/moderation/messages/{id}/visibility` | `{ hidden, note? }` support write — sets `Message.HiddenAt` |
+| GET | `/v1/admin/queues/attention` | Work-queue home — counts + priority items (reports, payouts, refunds, photos, kills, fraud) |
+| GET | `/v1/admin/payouts/run` | Recorded withdrawals batch with totals |
+| POST | `/v1/admin/payouts/run/mark-paid` | Finance — `{ ids, expectedTotalPoints?, note? }` batch ops mark-paid with checksum |
+| GET | `/v1/admin/revenue/today` | Nepal-day spend by wallet kind + adminReceive total |
+| GET | `/v1/admin/fraud/signals` | Heuristic fraud desk (repeat reporters, swipe spam, referral rings, withdraw-then-restrict, multi-account device/IP) |
+| GET | `/v1/admin/users/{id}/timeline` | Unified case timeline (audit, reports, withdrawals, refunds, notes, status) |
+| POST | `/v1/admin/users/{id}/case-notes` | `{ body }` support write — staff case note |
+| POST | `/v1/admin/users/{id}/shadow-ban` | `{ reason? }` soft ban — empty deck, muted chat send |
+| POST | `/v1/admin/users/{id}/unshadow-ban` | Lift shadow ban |
+| GET | `/v1/admin/users?q=&gender=&status=&city=&incomplete=` | Search + filters (`active`/`suspended`/`shadowBanned`/`banned`) |
+| GET | `/v1/admin/config/history` | Pre-change config snapshots |
+| POST | `/v1/admin/staff/{id}/revoke-sessions` | Superadmin — invalidate outstanding staff JWTs |
+| GET | `/v1/admin/users/{id}` | User 360 (balances, photos, matches, swipe day, ledger) |
+| POST | `/v1/admin/users/{id}/ban` | Soft-delete (`deletedAt`) |
+| POST | `/v1/admin/users/{id}/unban` | Clear ban |
+| POST | `/v1/admin/users/{id}/suspend` | Hide from discovery (`suspendedAt`) |
+| POST | `/v1/admin/users/{id}/unsuspend` | Clear suspension |
+| POST | `/v1/admin/users/{id}/warn` | Sets `lastWarnedAt` + audit |
+| POST | `/v1/admin/users/{id}/clear-photos` | Deletes profile photos |
+| POST | `/v1/admin/users/{id}/unmatch-all` | Ends active matches |
+| POST | `/v1/admin/users/{id}/reset-swipe-day` | Zeros today Nepal-day counters |
+| POST | `/v1/admin/users/{id}/refund-charge` | `{ sourceId, note? }` — below dual-control threshold refunds immediately; at/above queues for second staff |
+| POST | `/v1/admin/users/{id}/adjust-points` | `{ points, bucket: promotional\|earned, title, detail? }` |
+| POST | `/v1/admin/users/{id}/complimentary-premium` | `{ enabled }` staff override for male Premium |
+| GET | `/v1/admin/ledger/admin` | Platform wallet ledger |
+| GET | `/v1/admin/withdrawals?status=` | Includes eligibility snapshot + `statusLabel` |
+| GET | `/v1/admin/withdrawals/export.csv?status=` | CSV export for payout desk |
+| POST | `/v1/admin/withdrawals/{id}/resolve` | `{ decision: decline\|markPaid, note? }` |
+| GET | `/v1/admin/refunds?status=` | Dual-control refund queue |
+| POST | `/v1/admin/refunds/{id}/resolve` | `{ decision: approve\|reject, note? }` — must be a different staff than requester |
+| GET | `/v1/admin/referrals/invites` | Referral invite list |
+| GET | `/v1/admin/referrals/commissions?status=` | Commission list |
+| POST | `/v1/admin/referrals/commissions/{id}/clawback` | `{ note? }` marks commission reversed |
+| GET | `/v1/admin/grants/daily-free?dayKey=` | Nepal-day free points recipients |
+| GET | `/v1/admin/subscriptions/overview` | Counts; payments still disabled |
+| GET | `/v1/admin/reports?status=&sla=&claim=` | Moderation queue — `sla`=`overdue`/`due_soon`/`ok`/`closed`; `claim`=`unclaimed`/`mine`/`claimed`; items include claim + SLA fields |
+| POST | `/v1/admin/reports/{id}/claim` | Support — claim open report (sets investigating) |
+| POST | `/v1/admin/reports/{id}/unclaim` | Support — release claim (owner or superadmin) |
+| POST | `/v1/admin/reports/{id}/resolve` | `{ status, note?, moderationAction? }` — status `investigating`/`actioned`/`dismissed`; action `warn`/`suspend`/`ban`/`none`; notifies reporter (and reported on warn/suspend/ban) |
+| GET | `/v1/admin/users/export.csv` | Same filters as user list — CSV export |
+| GET | `/v1/admin/moderation/keyword-hits?status=` | Chat keyword flag queue |
+| POST | `/v1/admin/moderation/keyword-hits/{id}/resolve` | Support — `{ decision: dismiss\|actioned, note? }` |
+| GET | `/v1/admin/watchlist` | Current staff watchlist |
+| POST | `/v1/admin/users/{id}/watch` | Support — `{ note? }` |
+| POST | `/v1/admin/users/{id}/unwatch` | Support — remove from watchlist |
+| GET | `/v1/admin/users/{id}/case-packet` | Read-only trust dossier for an account |
+| GET | `/v1/admin/users/{id}/linked-accounts` | Accounts sharing device/IP (90d refresh tokens) |
+| GET | `/v1/admin/auth-blocks?active=` | Device/IP auth blocklist |
+| POST | `/v1/admin/auth-blocks` | Support — `{ kind: device\|ip, value, reason? }` |
+| POST | `/v1/admin/auth-blocks/{id}/clear` | Support — deactivate a block |
+| GET | `/v1/admin/users/{id}/export.json` | Compliance package (profile, wallet, photos metadata, reports, recent ledger) |
+| POST | `/v1/admin/users/{id}/erase` | Superadmin — `{ confirm: true, reason? }` bans + scrubs PII, hides photos, revokes sessions |
+| GET | `/v1/admin/appeals?status=&sla=` | Restriction appeal queue (SLA clocks like reports) |
+| POST | `/v1/admin/users/{id}/appeals` | Support — `{ body, kind? }` file appeal on behalf of user |
+| POST | `/v1/admin/appeals/{id}/resolve` | Support — `{ decision: accept\|reject, note? }` (accepting a ban requires superadmin) |
+| POST | `/v1/me/appeals` | User — `{ body, kind? }` when suspended / shadow-banned / banned |
+| GET | `/v1/app/client-config` | Anonymous — maintenance, min build, optional banner |
+| POST | `/v1/admin/users/{id}/force-logout` | Support — revoke all refresh tokens for the account |
+| POST | `/v1/admin/moderation/photos/bulk-review` | Support — `{ ids, status: approved\|rejected, reason?, note? }` (max 100) |
+| GET | `/v1/admin/staff/activity` | Nepal-day + 7d staff audit activity snapshot |
+| GET | `/v1/admin/audit?q=&action=&staffEmail=` | Staff action log (filters) |
+| GET | `/v1/admin/audit/export.csv` | Same filters — CSV export |
+| GET | `/v1/admin/promos` | Promo code list |
+| POST | `/v1/admin/promos` | Finance — create `{ code, points, bucket?, maxRedemptions?, expiresAt? }` |
+| POST | `/v1/admin/promos/{id}/active` | Finance — `{ active }` |
+| POST | `/v1/admin/broadcast` | Support — `{ title, body, gender?, city?, incompleteOnly }` system inbox segment (cap 5000) |
+| GET | `/v1/admin/staff` | List staff (any role can read) |
+| POST | `/v1/admin/staff` | Invite — `{ email, displayName, role, temporaryPassword }` (superadmin) |
+| POST | `/v1/admin/staff/{id}/reset-password` | `{ temporaryPassword }` (superadmin) |
+| POST | `/v1/admin/staff/{id}/disable` | Superadmin; cannot disable last superadmin or self |
+| POST | `/v1/admin/staff/{id}/enable` | Superadmin |
+| POST | `/v1/admin/staff/{id}/role` | `{ role }` (superadmin) |
+
+Bootstrap (`Admin:Bootstrap*`) only seeds the first staff user when the table
+is empty. Ongoing accounts are managed via `/v1/admin/staff`.
+
+Withdrawal `markPaid` is an ops marker only — the API never sends money to a
+bank. Points UI should stay labeled as points / stated NPR.
+
+`Admin:RefundDualControlThresholdPoints` (default `500`) controls when refunds
+need a second staff approval.
+
+**Runtime config / kills** (`AppRuntimeSettings`, single row): prices for premium
+actions, extra swipes, male daily free points / free swipe quota, min withdrawal;
+boolean kills for discovery, chat messaging, premium `ChargeToAdmin`, withdrawals,
+and referrals. Consumers read live values — flips take effect on the next request
+without a deploy. Hidden photos/messages are omitted from user album and
+conversation fetches.
+
+**Trust / fraud (Phase 4):** `Account.ShadowBannedAt` empties the discovery
+deck and blocks chat send while keeping login. Profile photos use
+`ReviewStatus` (`pending`/`approved`/`rejected`); discovery albums only show
+`approved`. New profile uploads start `pending`; existing rows migrate to
+`approved`.
+
+**Sessions / multi-account:** `/v1/auth/verify` and `/refresh` store
+`RefreshToken.IpAddress`, optional `DeviceId` (`X-Device-Id` header), and
+`UserAgent`. Fraud desk flags shared device (≥3 accounts / 7d) and shared IP
+(≥5 accounts / 7d).
+
+**Payout run:** batch mark-paid is an ops marker only — the API never sends
+money to a bank. `expectedTotalPoints` rejects the batch on checksum mismatch.
+
+**Growth:** Flutter clients send `X-Device-Id` (stable install id). Marketplace
+health includes per-city discoverable mix. Promo codes and staff broadcast land
+in the in-app notification inbox (`type=system`).
+
+**Staff sessions:** `StaffUser.TokensValidAfter` is bumped on password reset,
+disable, role change, and explicit revoke. JWT bearer validation rejects staff
+tokens issued at or before that instant (requires `iat` / `nbf` on the token).
+Config saves append `AppConfigRevision` snapshots (history is the state
+*before* each change).
+
+**Trust SLA / compliance (Phase 8):** Open and investigating reports are due
+after `Admin:ReportSlaHours` (default 24) with a `due_soon` warn at
+`Admin:ReportSlaWarnHours` (default 18). Attention queue surfaces overdue
+counts. User `export.json` is a staff download of account data; `erase` is a
+destructive scrub (ops marker — not a legal guarantee of byte deletion from
+object storage backups).
+
+**Appeals / client ops (Phase 9):** `ModerationAppeal` covers ban / suspend /
+shadowBan with `Admin:AppealSlaHours` (default 48). Accept lifts the matching
+restriction. `AppRuntimeSettings` also stores `maintenanceMode`,
+`minClientBuild`, and an optional in-app banner exposed at
+`/v1/app/client-config`.
+
+**Desk ops (Phase 10):** Force-logout revokes refresh tokens only (access JWTs
+expire on TTL). Bulk photo review audits each id. Staff activity aggregates
+`AdminAuditEvent` for the Nepal day. `/v1/me` includes optional
+`restrictionStatus` (`suspended` / `shadowBanned` / `banned`).
+
+**Case ownership / notify (Phase 11):** Reports can be claimed by support staff.
+Resolve/dismiss and appeal accept/reject send in-app `system` inbox messages.
+Staff `lastLoginAt` updates on login (audit `staff.login`). Users CSV export
+mirrors list filters.
+
+**Keywords / watch / case packet (Phase 12):** `AppRuntimeSettings.chatKeywordList`
+(comma-separated) flags matching chat sends into `ChatKeywordHit` for review.
+Staff can watch accounts (`/v1/admin/watchlist`). `GET .../case-packet` returns
+a read-only trust dossier (reports, appeals, keyword hits, notes, counters).
+
+**Linked accounts / auth blocks (Phase 13):** `GET .../linked-accounts` clusters
+accounts that shared a device id or IP on refresh tokens (90 days). Active
+`AuthBlockEntry` rows (`device` / `ip`) deny OTP verify and refresh with `403`.
 
 ### `GET /v1/me/photos`
 

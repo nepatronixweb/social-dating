@@ -13,9 +13,14 @@ public interface IAuthService
         string? code,
         CancellationToken ct,
         string? referralCode = null,
-        bool login = false
+        bool login = false,
+        ClientContext client = default
     );
-    Task<AuthVerifyResponse> RefreshAsync(string? refreshToken, CancellationToken ct);
+    Task<AuthVerifyResponse> RefreshAsync(
+        string? refreshToken,
+        CancellationToken ct,
+        ClientContext client = default
+    );
     Task SignOutAsync(Guid accountId, string? refreshToken, CancellationToken ct);
     Task<AccountStateResponse> GetMeAsync(Guid accountId, CancellationToken ct);
     Task<AccountStateResponse> AcceptTermsAsync(Guid accountId, CancellationToken ct);
@@ -108,7 +113,8 @@ public sealed class AuthService(
         string? code,
         CancellationToken ct,
         string? referralCode = null,
-        bool login = false
+        bool login = false,
+        ClientContext client = default
     )
     {
         if (!PhoneE164.TryNormalize(phone, out var e164))
@@ -185,10 +191,15 @@ public sealed class AuthService(
             await referrals.EnsureCodeAsync(account, ct);
         }
 
-        return await IssueSessionAsync(account, ct);
+        await EnsureClientNotBlockedAsync(client, ct);
+        return await IssueSessionAsync(account, client, ct);
     }
 
-    public async Task<AuthVerifyResponse> RefreshAsync(string? refreshToken, CancellationToken ct)
+    public async Task<AuthVerifyResponse> RefreshAsync(
+        string? refreshToken,
+        CancellationToken ct,
+        ClientContext client = default
+    )
     {
         if (string.IsNullOrWhiteSpace(refreshToken))
         {
@@ -208,9 +219,10 @@ public sealed class AuthService(
             throw new AuthException(401, "Please sign in again.", "The session is no longer valid.");
         }
 
+        await EnsureClientNotBlockedAsync(client, ct);
         stored.RevokedAt = Now;
         await db.SaveChangesAsync(ct);
-        return await IssueSessionAsync(stored.Account, ct);
+        return await IssueSessionAsync(stored.Account, client, ct);
     }
 
     public async Task SignOutAsync(Guid accountId, string? refreshToken, CancellationToken ct)
@@ -438,7 +450,46 @@ public sealed class AuthService(
         account.UpdatedAt = Now;
     }
 
-    async Task<AuthVerifyResponse> IssueSessionAsync(Account account, CancellationToken ct)
+    async Task EnsureClientNotBlockedAsync(ClientContext client, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(client.DeviceId))
+        {
+            var deviceBlocked = await db.AuthBlockEntries.AsNoTracking().AnyAsync(
+                b => b.Active && b.Kind == "device" && b.Value == client.DeviceId,
+                ct
+            );
+            if (deviceBlocked)
+            {
+                throw new AuthException(
+                    403,
+                    "Sign-in blocked.",
+                    "This device cannot sign in. Contact support if you think this is a mistake."
+                );
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(client.IpAddress))
+        {
+            var ipBlocked = await db.AuthBlockEntries.AsNoTracking().AnyAsync(
+                b => b.Active && b.Kind == "ip" && b.Value == client.IpAddress,
+                ct
+            );
+            if (ipBlocked)
+            {
+                throw new AuthException(
+                    403,
+                    "Sign-in blocked.",
+                    "This network cannot sign in. Contact support if you think this is a mistake."
+                );
+            }
+        }
+    }
+
+    async Task<AuthVerifyResponse> IssueSessionAsync(
+        Account account,
+        ClientContext client,
+        CancellationToken ct
+    )
     {
         var (access, expiresAt) = jwt.IssueAccessToken(account.Id);
         var refresh = SecretHasher.NewRefreshToken();
@@ -450,18 +501,29 @@ public sealed class AuthService(
                 TokenHash = SecretHasher.HashToken(refresh),
                 CreatedAt = Now,
                 ExpiresAt = Now.AddDays(_auth.RefreshTokenDays),
+                IpAddress = client.IpAddress,
+                DeviceId = client.DeviceId,
+                UserAgent = client.UserAgent,
             }
         );
         await db.SaveChangesAsync(ct);
         return new AuthVerifyResponse(ToState(account), access, refresh, expiresAt);
     }
 
-    static AccountStateResponse ToState(Account account) =>
-        new(
+    static AccountStateResponse ToState(Account account)
+    {
+        string? restriction = null;
+        if (account.DeletedAt is not null) restriction = "banned";
+        else if (account.SuspendedAt is not null) restriction = "suspended";
+        else if (account.ShadowBannedAt is not null) restriction = "shadowBanned";
+
+        return new(
             account.Id.ToString(),
             account.TermsAcceptedAt is not null,
             account.AgeEligible,
             account.DisplayName,
-            account.Gender
+            account.Gender,
+            restriction
         );
+    }
 }

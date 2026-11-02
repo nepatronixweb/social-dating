@@ -23,6 +23,14 @@ abstract interface class SwipeRepository {
     required bool confirmedPaid,
   });
 
-  /// Reverts the most recent swipe, if undo is supported and one exists.
-  Future<UndoOutcome?> undoLast();
+  /// Reverts the most recent swipe. Unsubscribed males must confirm the
+  /// rewind fee first.
+  Future<UndoOutcome?> undoLast({bool confirmedPaid = false});
+
+  /// Opens a chat with [profileId] (creates a match if needed). Unsubscribed
+  /// males pay the premium action price.
+  Future<DiscoveryMessageOutcome> openDiscoveryMessage(
+    String profileId, {
+    required bool confirmedPaid,
+  });
 }

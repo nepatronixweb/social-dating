@@ -21,6 +21,7 @@ import '../../../core/widgets/skeleton_layouts.dart';
 import '../../../core/widgets/state_message.dart';
 import '../../../core/widgets/swipe_card.dart';
 import '../../../data/models/discovery_filters.dart';
+import '../../../data/models/match.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/models/swipe.dart';
 import '../../auth/providers/session_provider.dart';
@@ -33,8 +34,6 @@ import 'widgets/match_celebration_dialog.dart';
 import 'widgets/paid_swipe_dialog.dart';
 import 'widgets/profile_gate_view.dart';
 import 'widgets/swipe_action_row.dart';
-import 'widgets/swipe_limit_sheet.dart';
-import 'widgets/swipe_quota_chip.dart';
 
 /// Discovery tab: one large profile card at a time. Swipe it, or use the
 /// pass and like buttons. Swipe counting and pricing are mock behaviour (see
@@ -53,7 +52,6 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   bool _paidConfirmed = false;
   bool _showingMatch = false;
 
-  // Only For You is built, so the selection never changes.
   static const DiscoveryCategory _category = DiscoveryCategory.forYou;
 
   /// The photo showing on the top card, for the dots in the header. Tied to a
@@ -127,15 +125,88 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
     _photoIndex = page;
   });
 
-  void _selectCategory(DiscoveryCategory category) {
-    if (category == _category) return;
-    // Only For You is built; the others explain themselves instead of
-    // switching to an empty list.
-    showAppSnackBar(context, '${category.label} is coming soon');
+  /// Ensures the wallet can cover a premium action. No confirmation sheet —
+  /// points are deducted when the action is sent.
+  Future<bool> _ensurePremiumFunds() async {
+    final quota = ref.read(discoveryControllerProvider).quota;
+    if (quota == null) return false;
+    final cost = _controller.premiumActionCostPaisa;
+    if (!_controller.mustPayPremiumActions) return true;
+    if (quota.balancePaisa >= cost) return true;
+    final action = await showInsufficientBalanceSheet(
+      context,
+      quota: quota,
+      now: ref.read(clockProvider)(),
+    );
+    if (action == InsufficientBalanceAction.openWallet && mounted) {
+      await context.push(AppRoutes.wallet);
+    }
+    return false;
   }
 
-  void _comingSoon(String feature) =>
-      showAppSnackBar(context, '$feature is coming soon');
+  Future<void> _onSuperLike() async {
+    final top = ref.read(discoveryControllerProvider).top;
+    if (top == null) return;
+    if (!await _ensurePremiumFunds() || !mounted) return;
+    final rejection = await _controller.superLike(confirmedPaid: true);
+    if (!mounted) return;
+    if (rejection == SwipeRejection.insufficientFunds) {
+      final quota = ref.read(discoveryControllerProvider).quota;
+      if (quota != null) {
+        await showInsufficientBalanceSheet(
+          context,
+          quota: quota,
+          now: ref.read(clockProvider)(),
+        );
+      }
+    } else if (rejection != null) {
+      showAppSnackBar(context, 'That super like was not sent.');
+    }
+  }
+
+  Future<void> _onDiscoveryMessage() async {
+    final top = ref.read(discoveryControllerProvider).top;
+    if (top == null) return;
+    if (!await _ensurePremiumFunds() || !mounted) return;
+    final result = await _controller.openDiscoveryMessage(confirmedPaid: true);
+    if (!mounted) return;
+    if (result.rejection == SwipeRejection.insufficientFunds) {
+      final quota = ref.read(discoveryControllerProvider).quota;
+      if (quota != null) {
+        await showInsufficientBalanceSheet(
+          context,
+          quota: quota,
+          now: ref.read(clockProvider)(),
+        );
+      }
+      return;
+    }
+    final conversationId = result.conversationId;
+    if (conversationId == null) {
+      showAppSnackBar(context, 'Could not open that chat.');
+      return;
+    }
+    await context.push(AppRoutes.chatConversation(conversationId));
+  }
+
+  Future<void> _onUndo() async {
+    if (!_controller.canUndo) return;
+    if (!await _ensurePremiumFunds() || !mounted) return;
+    final rejection = await _controller.undo(confirmedPaid: true);
+    if (!mounted) return;
+    if (rejection == SwipeRejection.insufficientFunds) {
+      final quota = ref.read(discoveryControllerProvider).quota;
+      if (quota != null) {
+        await showInsufficientBalanceSheet(
+          context,
+          quota: quota,
+          now: ref.read(clockProvider)(),
+        );
+      }
+    } else if (rejection != null) {
+      showAppSnackBar(context, 'Could not rewind that swipe.');
+    }
+  }
 
   Future<void> _openFilters() async {
     final chosen = await showDiscoveryFiltersSheet(
@@ -147,26 +218,31 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
     }
   }
 
-  Future<void> _openLimitSheet(SwipeQuota quota) => showSwipeLimitSheet(
-    context,
-    quota: quota,
-    now: ref.read(clockProvider)(),
-  );
-
   Future<void> _celebrate(Profile match) async {
     if (_showingMatch) return;
     _showingMatch = true;
     final canView = ref.read(sessionProvider).isLoggedIn;
+    final conversationId =
+        ref.read(discoveryControllerProvider).matchConversationId ??
+        Match.chatIdFor(match.id);
     final action = await showMatchCelebration(
       context,
       profile: match,
       canViewMatches: canView,
+      allowMessage: canView,
     );
     _showingMatch = false;
     if (!mounted) return;
     _controller.clearMatch();
-    if (action == MatchCelebrationAction.viewMatches && canView) {
-      context.go(AppRoutes.matches);
+    switch (action) {
+      case MatchCelebrationAction.sayHello:
+        if (canView) {
+          await context.push(AppRoutes.chatConversation(conversationId));
+        }
+      case MatchCelebrationAction.viewMatches:
+        if (canView) context.go(AppRoutes.matches);
+      case MatchCelebrationAction.keepSwiping:
+        break;
     }
   }
 
@@ -215,6 +291,7 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
             : AppPage(
                 appBar: AppTopBar(
                   showBrand: true,
+                  showPoints: false,
                   actions: [
                     if (status == AuthStatus.incompleteProfile)
                       TextButton(
@@ -262,35 +339,21 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
 
     final quota = state.quota;
     if (quota != null && quota.next.kind == SwipeKind.needsProfile) {
-      return Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.sm),
-            child: SwipeQuotaChip(
-              quota: quota,
-              onTap: () => _openLimitSheet(quota),
-            ),
-          ),
-          Expanded(
-            child: ProfileGateView(
-              onComplete: () => context.go(AppRoutes.profileCompletion),
-            ),
-          ),
-        ],
+      return ProfileGateView(
+        onComplete: () => context.go(AppRoutes.profileCompletion),
       );
     }
     return _buildEmpty(state, filters);
   }
 
-  /// The card edge to edge, the header and quota chip over its top, and the
-  /// action row over its bottom.
+  /// The card edge to edge, the header over its top, and the action row over
+  /// its bottom.
   Widget _buildStage(
     DiscoveryState state,
     Profile top,
     DiscoveryFilters filters, {
     required bool incomplete,
   }) {
-    final quota = state.quota;
     final flags = ref.watch(featureFlagsProvider);
     final canUndo = flags.undoSwipe && state.lastSwiped != null;
     final undoLabel = !flags.undoSwipe
@@ -339,7 +402,6 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                   children: [
                     DiscoveryHeader(
                       category: _category,
-                      onCategory: _selectCategory,
                       onPreferences: _openFilters,
                       activeFilterCount: filters.activeCount,
                       showFinishProfile: incomplete,
@@ -348,14 +410,6 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                     ),
                     AppSpacing.gapSm,
                     PhotoDots(count: photoCount, index: photoIndex),
-                    if (quota != null) ...[
-                      AppSpacing.gapSm,
-                      SwipeQuotaChip(
-                        quota: quota,
-                        onImage: true,
-                        onTap: () => _openLimitSheet(quota),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -368,13 +422,13 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
                 passLabel: 'Pass on ${top.displayName}',
                 likeLabel: 'Like ${top.displayName}',
                 undoLabel: undoLabel,
-                superLikeLabel: 'Super like ${top.displayName} (coming soon)',
-                messageLabel: 'Message ${top.displayName} (coming soon)',
+                superLikeLabel: 'Super like ${top.displayName}',
+                messageLabel: 'Message ${top.displayName}',
                 onPass: () => cardKey.currentState?.swipe(SwipeDirection.left),
                 onLike: () => cardKey.currentState?.swipe(SwipeDirection.right),
-                onUndo: canUndo ? _controller.undo : null,
-                onSuperLike: () => _comingSoon('Super like'),
-                onMessage: () => _comingSoon('Messaging before a match'),
+                onUndo: canUndo ? _onUndo : null,
+                onSuperLike: _onSuperLike,
+                onMessage: _onDiscoveryMessage,
               ),
             ),
           ],
@@ -384,8 +438,8 @@ class _DiscoveryScreenState extends ConsumerState<DiscoveryScreen> {
   }
 
   /// Room the action row takes at the bottom of the card, so the name and
-  /// interests clear it.
-  static const double _actionRowHeight = 120;
+  /// interests clear it. Kept tight so the info block sits a bit lower.
+  static const double _actionRowHeight = 96;
   Widget _buildEmpty(DiscoveryState state, DiscoveryFilters filters) {
     final hasFilters = !filters.isDefault;
 

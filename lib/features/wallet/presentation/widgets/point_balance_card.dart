@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/constants/wallet_rules.dart';
 import '../../../../core/theme/app_elevation.dart';
 import '../../../../core/theme/app_radii.dart';
 import '../../../../core/theme/app_sizes.dart';
@@ -8,7 +7,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/money.dart';
 import '../../../../core/utils/theme_context.dart';
 
-/// Accessible promotional or earned balance card with a stated NPR equivalent.
+/// Accessible promotional or earned balance card.
 class PointBalanceCard extends StatelessWidget {
   const PointBalanceCard({
     super.key,
@@ -27,16 +26,13 @@ class PointBalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final equivalent = formatNpr(walletPaisaFromPoints(points));
     final held = heldPoints > 0
         ? ', ${formatPoints(heldPoints)} held for a withdrawal request'
         : '';
 
     return Semantics(
       container: true,
-      label:
-          '$title, ${formatPoints(points)}, stated equivalent $equivalent. '
-          '$footnote$held',
+      label: '$title, ${formatPoints(points)}. $footnote$held',
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: context.colors.surfaceContainerHighest,
@@ -68,15 +64,6 @@ class PointBalanceCard extends StatelessWidget {
                 child: Text(
                   formatPoints(points),
                   style: context.text.headlineSmall,
-                ),
-              ),
-              AppSpacing.gapXs,
-              ExcludeSemantics(
-                child: Text(
-                  'Stated equivalent $equivalent',
-                  style: context.text.bodyMedium?.copyWith(
-                    color: context.palette.textMuted,
-                  ),
                 ),
               ),
               if (heldPoints > 0) ...[

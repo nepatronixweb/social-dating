@@ -3,8 +3,23 @@ import 'package:flutter/foundation.dart';
 import '../../core/constants/swipe_rules.dart';
 import 'profile.dart';
 
-/// Left is a pass, right is a like. Both count towards the same quota.
-enum SwipeDirection { left, right }
+/// Left is a pass, right is a like, superLike is a paid spotlight like.
+/// Left and right count towards the same free daily quota; superLike does not.
+enum SwipeDirection { left, right, superLike }
+
+/// Wire value for the discovery swipe API.
+String swipeDirectionWire(SwipeDirection direction) => switch (direction) {
+  SwipeDirection.left => 'left',
+  SwipeDirection.right => 'right',
+  SwipeDirection.superLike => 'super',
+};
+
+SwipeDirection? parseSwipeDirection(String? raw) => switch (raw) {
+  'left' => SwipeDirection.left,
+  'right' => SwipeDirection.right,
+  'super' || 'superLike' => SwipeDirection.superLike,
+  _ => null,
+};
 
 /// What the next swipe would be, given the current quota.
 enum SwipeKind {
@@ -55,6 +70,7 @@ class SwipeQuota {
     required this.dayKey,
     required this.resetsAt,
     this.pricePaisa = SwipeRules.extraSwipePricePaisa,
+    this.actionPricePaisa = SwipeRules.premiumActionPricePoints,
   });
 
   final bool profileComplete;
@@ -72,6 +88,9 @@ class SwipeQuota {
   /// Mock wallet balance in paisa.
   final int balancePaisa;
   final int pricePaisa;
+
+  /// Cost of super like, discovery message and rewind for unsubscribed males.
+  final int actionPricePaisa;
 
   /// The Nepal calendar day this snapshot belongs to (`YYYY-MM-DD`).
   final String dayKey;
@@ -137,6 +156,7 @@ class SwipeQuota {
     freeDailyLimit: freeDailyLimit,
     balancePaisa: balancePaisa ?? this.balancePaisa,
     pricePaisa: pricePaisa,
+    actionPricePaisa: actionPricePaisa,
     dayKey: dayKey,
     resetsAt: resetsAt,
   );
@@ -150,6 +170,7 @@ class SwipeQuota {
       other.freeDailyLimit == freeDailyLimit &&
       other.balancePaisa == balancePaisa &&
       other.pricePaisa == pricePaisa &&
+      other.actionPricePaisa == actionPricePaisa &&
       other.dayKey == dayKey &&
       other.resetsAt == resetsAt;
 
@@ -161,6 +182,7 @@ class SwipeQuota {
     freeDailyLimit,
     balancePaisa,
     pricePaisa,
+    actionPricePaisa,
     dayKey,
     resetsAt,
   );
@@ -175,11 +197,13 @@ class SwipeOutcome {
   const SwipeOutcome.recorded({
     required this.quota,
     this.matchedProfile,
+    this.conversationId,
     this.chargedPaisa = 0,
   }) : rejection = null;
 
   const SwipeOutcome.rejected({required this.quota, required this.rejection})
     : matchedProfile = null,
+      conversationId = null,
       chargedPaisa = 0;
 
   /// The quota after this call, as the repository sees it.
@@ -187,6 +211,10 @@ class SwipeOutcome {
 
   /// Set when a right swipe produced a mutual match.
   final Profile? matchedProfile;
+
+  /// Match / conversation id when [matchedProfile] is set (API match GUID, or
+  /// mock `Match.chatIdFor`).
+  final String? conversationId;
   final int chargedPaisa;
   final SwipeRejection? rejection;
 
@@ -196,8 +224,35 @@ class SwipeOutcome {
 /// What the repository gives back after an undo.
 @immutable
 class UndoOutcome {
-  const UndoOutcome({required this.profile, required this.quota});
+  const UndoOutcome({
+    required this.quota,
+    this.profile,
+    this.chargedPaisa = 0,
+    this.rejection,
+  });
 
-  final Profile profile;
+  final Profile? profile;
   final SwipeQuota quota;
+  final int chargedPaisa;
+  final SwipeRejection? rejection;
+
+  bool get recorded => rejection == null && profile != null;
+}
+
+/// Opening a discovery direct message (before or instead of a mutual match).
+@immutable
+class DiscoveryMessageOutcome {
+  const DiscoveryMessageOutcome({
+    required this.quota,
+    this.conversationId,
+    this.chargedPaisa = 0,
+    this.rejection,
+  });
+
+  final SwipeQuota quota;
+  final String? conversationId;
+  final int chargedPaisa;
+  final SwipeRejection? rejection;
+
+  bool get recorded => rejection == null && conversationId != null;
 }

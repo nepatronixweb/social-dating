@@ -52,6 +52,7 @@ class AccountStateDto {
     this.isAgeEligible,
     this.displayName,
     this.gender,
+    this.restrictionStatus,
   });
 
   final AccountId id;
@@ -59,6 +60,7 @@ class AccountStateDto {
   final bool? isAgeEligible;
   final String? displayName;
   final String? gender;
+  final String? restrictionStatus;
 
   factory AccountStateDto.fromJson(Object? json) =>
       AccountStateDto.fromMap(JsonMap.from(json));
@@ -76,6 +78,7 @@ class AccountStateDto {
       isAgeEligible: map.optionalBoolean('isAgeEligible'),
       displayName: map.optionalString('displayName'),
       gender: map.optionalString('gender'),
+      restrictionStatus: map.optionalString('restrictionStatus'),
     );
   }
 
@@ -85,6 +88,7 @@ class AccountStateDto {
     'isAgeEligible': isAgeEligible,
     'displayName': displayName,
     'gender': gender,
+    'restrictionStatus': restrictionStatus,
   };
 
   AccountState toDomain() => AccountState(
@@ -93,6 +97,7 @@ class AccountStateDto {
     isAgeEligible: isAgeEligible,
     displayName: displayName,
     gender: gender,
+    restrictionStatus: restrictionStatus,
   );
 
   factory AccountStateDto.fromDomain(AccountState state) => AccountStateDto(
@@ -101,6 +106,7 @@ class AccountStateDto {
     isAgeEligible: state.isAgeEligible,
     displayName: state.displayName,
     gender: state.gender,
+    restrictionStatus: state.restrictionStatus,
   );
 }
 

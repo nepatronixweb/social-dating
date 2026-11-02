@@ -3,6 +3,7 @@ using SocialDating.Api.Auth;
 using SocialDating.Api.Data;
 using SocialDating.Api.Discovery;
 using SocialDating.Api.Inbox;
+using SocialDating.Api.Ops;
 using SocialDating.Api.Photos;
 using SocialDating.Api.Wallet;
 
@@ -31,6 +32,7 @@ public sealed class ChatService(
     TimeProvider time,
     IWalletService wallet,
     PhotoService photos,
+    IAppConfigService? appConfig = null,
     IChatRealtime? realtime = null,
     IInboxService? inbox = null) : IChatService
 {
@@ -40,7 +42,7 @@ public sealed class ChatService(
 
     public async Task<ConversationListResponse> FetchPreviewsAsync(Guid viewerId, CancellationToken ct)
     {
-        await RequireAccount(viewerId, ct);
+        var viewer = await RequireAccount(viewerId, ct);
         var hiddenPeople = await HiddenIds(viewerId, ct);
         var matches = (await db.Matches
             .Where(m => m.AccountLowId == viewerId || m.AccountHighId == viewerId)
@@ -65,7 +67,7 @@ public sealed class ChatService(
             if (last is null) continue;
 
             var other = await db.Accounts.FirstOrDefaultAsync(a => a.Id == otherId, ct);
-            var profile = await PublicOf(other, ct);
+            var profile = await PublicOf(viewer, other, ct);
             if (profile is null) continue;
 
             items.Add(new ConversationResponse(
@@ -92,7 +94,7 @@ public sealed class ChatService(
     {
         await RequireOpenChat(viewerId, conversationId, ct);
         var rows = (await db.Messages
-            .Where(m => m.MatchId == conversationId)
+            .Where(m => m.MatchId == conversationId && m.HiddenAt == null)
             .ToListAsync(ct))
             .OrderBy(m => m.CreatedAt)
             .ThenBy(m => m.Id)
@@ -109,7 +111,29 @@ public sealed class ChatService(
         CancellationToken ct
     )
     {
+        if (appConfig is not null)
+        {
+            var cfg = await appConfig.GetAsync(ct);
+            if (cfg.KillChatMessaging)
+            {
+                throw new AuthException(
+                    503,
+                    "Messaging paused.",
+                    "Chat messaging is temporarily unavailable."
+                );
+            }
+        }
+
         var account = await RequireOpenChat(viewerId, conversationId, ct);
+        if (account.ShadowBannedAt is not null)
+        {
+            throw new AuthException(
+                403,
+                "Messaging unavailable.",
+                "You cannot send messages right now."
+            );
+        }
+
         await wallet.EnsureWelcomeAsync(account, ct);
         var text = (body.Text ?? "").Trim();
         var spendable = await wallet.SpendableAsync(viewerId, ct);
@@ -125,10 +149,7 @@ public sealed class ChatService(
         }
 
         var quote = QuoteFor(account, text);
-        if (quote.CostPaisa > 0 && !body.ConfirmedPaid)
-        {
-            return new SendOutcomeResponse(null, "paymentRequired", quote, 0, spendable);
-        }
+        // Word fees are charged on send without a confirmation step (UI deducts immediately).
 
         var message = new Message
         {
@@ -177,6 +198,7 @@ public sealed class ChatService(
         }
 
         db.Messages.Add(message);
+        await TryFlagKeywordsAsync(message, ct);
 
         var member = await Member(conversationId, viewerId, ct);
         member.Hidden = false;
@@ -315,10 +337,23 @@ public sealed class ChatService(
     async Task<bool> IsHidden(Guid viewerId, Guid otherId, CancellationToken ct) =>
         (await HiddenIds(viewerId, ct)).Contains(otherId);
 
-    async Task<PublicProfileResponse?> PublicOf(Account? account, CancellationToken ct)
+    async Task<PublicProfileResponse?> PublicOf(Account viewer, Account? account, CancellationToken ct)
     {
         if (account is null) return null;
-        return ProfileMapper.ToPublic(account, Now, await photos.UrlsFor(account.Id, ct));
+        int? spendable = null;
+        if (ProfileRules.CanWithdraw(viewer.Gender) && ProfileRules.IsMale(account.Gender))
+        {
+            await wallet.EnsureWelcomeAsync(account, ct);
+            await wallet.EnsureDailyFreePointsAsync(account, ct);
+            spendable = await wallet.SpendableAsync(account.Id, ct);
+        }
+
+        return ProfileMapper.ToPublic(
+            account,
+            Now,
+            await photos.UrlsFor(account.Id, ct),
+            spendable
+        );
     }
 
     static Guid Other(MatchPair match, Guid viewerId) =>
@@ -373,4 +408,45 @@ public sealed class ChatService(
             WordCount.EligibleWords(message.Body),
             message.PhotoId is Guid photoId ? photos.SignedUrl(photoId) : null
         );
+
+    async Task TryFlagKeywordsAsync(Message message, CancellationToken ct)
+    {
+        if (appConfig is null || string.IsNullOrWhiteSpace(message.Body)) return;
+        try
+        {
+            var cfg = await appConfig.GetAsync(ct);
+            var keywords = (cfg.ChatKeywordList ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(k => k.Length >= 2)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(50)
+                .ToList();
+            if (keywords.Count == 0) return;
+
+            var body = message.Body;
+            foreach (var keyword in keywords)
+            {
+                if (body.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                {
+                    db.ChatKeywordHits.Add(
+                        new ChatKeywordHit
+                        {
+                            Id = Guid.NewGuid(),
+                            MessageId = message.Id,
+                            MatchId = message.MatchId,
+                            SenderAccountId = message.SenderAccountId,
+                            Keyword = keyword.Length > 64 ? keyword[..64] : keyword,
+                            MessageBody = body.Length > 500 ? body[..500] : body,
+                            Status = "open",
+                            CreatedAt = Now,
+                        }
+                    );
+                }
+            }
+        }
+        catch
+        {
+            // Keyword scanning must not fail a recorded send.
+        }
+    }
 }

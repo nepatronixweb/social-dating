@@ -4,6 +4,7 @@ import '../../core/config/integration_config.dart';
 import '../../core/errors/app_failure.dart';
 import '../../core/utils/app_logger.dart';
 import '../api/auth_paths.dart';
+import 'device_id_store.dart';
 import 'token_storage.dart';
 
 /// Networking configuration for the API integration layer.
@@ -97,23 +98,51 @@ class AuthHeaderInterceptor extends Interceptor {
   }
 }
 
+/// Sends a stable install id on every request (including verify/refresh).
+class DeviceIdInterceptor extends Interceptor {
+  DeviceIdInterceptor(this._devices);
+
+  final DeviceIdStore _devices;
+
+  @override
+  void onRequest(
+    RequestOptions options,
+    RequestInterceptorHandler handler,
+  ) async {
+    try {
+      final id = await _devices.getOrCreate();
+      options.headers['X-Device-Id'] = id;
+      handler.next(options);
+    } catch (error, stack) {
+      handler.reject(
+        DioException(requestOptions: options, error: error, stackTrace: stack),
+      );
+    }
+  }
+}
+
 /// Thin wrapper around [Dio]. Constructed lazily by a provider; constructing it
 /// performs no I/O.
 class ApiClient {
-  ApiClient({Dio? dio, bool Function()? isNetworkEnabled, TokenStorage? tokens})
-    : dio = _configure(
-        dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: ApiConfig.normalizedBaseUrl(ApiConfig.baseUrl),
-                connectTimeout: ApiConfig.connectTimeout,
-                receiveTimeout: ApiConfig.receiveTimeout,
-                headers: const {'Accept': 'application/json'},
-              ),
-            ),
-        isNetworkEnabled ?? () => ApiConfig.networkEnabled,
-        tokens,
-      );
+  ApiClient({
+    Dio? dio,
+    bool Function()? isNetworkEnabled,
+    TokenStorage? tokens,
+    DeviceIdStore? devices,
+  }) : dio = _configure(
+         dio ??
+             Dio(
+               BaseOptions(
+                 baseUrl: ApiConfig.normalizedBaseUrl(ApiConfig.baseUrl),
+                 connectTimeout: ApiConfig.connectTimeout,
+                 receiveTimeout: ApiConfig.receiveTimeout,
+                 headers: const {'Accept': 'application/json'},
+               ),
+             ),
+         isNetworkEnabled ?? () => ApiConfig.networkEnabled,
+         tokens,
+         devices,
+       );
 
   final Dio dio;
 
@@ -121,8 +150,12 @@ class ApiClient {
     Dio dio,
     bool Function() isEnabled,
     TokenStorage? tokens,
+    DeviceIdStore? devices,
   ) {
     dio.interceptors.add(NetworkGuardInterceptor(isEnabled: isEnabled));
+    if (devices != null) {
+      dio.interceptors.add(DeviceIdInterceptor(devices));
+    }
     if (tokens != null) {
       dio.interceptors.add(AuthHeaderInterceptor(tokens));
     }

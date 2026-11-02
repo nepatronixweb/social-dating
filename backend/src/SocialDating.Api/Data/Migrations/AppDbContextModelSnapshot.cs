@@ -74,6 +74,10 @@ namespace SocialDating.Api.Data.Migrations
                         .HasColumnType("character varying(800)")
                         .HasColumnName("interests");
 
+                    b.Property<DateTimeOffset?>("LastWarnedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_warned_at");
+
                     b.Property<string>("PhoneE164")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -88,6 +92,18 @@ namespace SocialDating.Api.Data.Migrations
                     b.Property<Guid?>("ReferredByAccountId")
                         .HasColumnType("uuid")
                         .HasColumnName("referred_by_account_id");
+
+                    b.Property<DateTimeOffset?>("ShadowBannedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("shadow_banned_at");
+
+                    b.Property<bool>("StaffComplimentaryPremium")
+                        .HasColumnType("boolean")
+                        .HasColumnName("staff_complimentary_premium");
+
+                    b.Property<DateTimeOffset?>("SuspendedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("suspended_at");
 
                     b.Property<DateTimeOffset?>("TermsAcceptedAt")
                         .HasColumnType("timestamp with time zone")
@@ -106,6 +122,295 @@ namespace SocialDating.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("accounts", (string)null);
+                });
+
+            modelBuilder.Entity("SocialDating.Api.Data.AdminAuditEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("action");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("detail");
+
+                    b.Property<string>("StaffEmail")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("staff_email");
+
+                    b.Property<Guid>("StaffUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("staff_user_id");
+
+                    b.Property<string>("TargetId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("target_id");
+
+                    b.Property<string>("TargetType")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("target_type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("StaffUserId");
+
+                    b.ToTable("admin_audit_events", (string)null);
+                });
+
+            modelBuilder.Entity("SocialDating.Api.Data.AdminRefundRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("account_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("note");
+
+                    b.Property<int>("Points")
+                        .HasColumnType("integer")
+                        .HasColumnName("points");
+
+                    b.Property<string>("RequestedByEmail")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("requested_by_email");
+
+                    b.Property<Guid>("RequestedByStaffId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by_staff_id");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<string>("ResolvedByEmail")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("resolved_by_email");
+
+                    b.Property<Guid?>("ResolvedByStaffId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resolved_by_staff_id");
+
+                    b.Property<string>("SourceId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("source_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("Status");
+
+                    b.HasIndex("AccountId", "SourceId", "Status");
+
+                    b.ToTable("admin_refund_requests", (string)null);
+                });
+
+            modelBuilder.Entity("SocialDating.Api.Data.AppConfigRevision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ChangedByEmail")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("changed_by_email");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("snapshot_json");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.ToTable("app_config_revisions", (string)null);
+                });
+
+            modelBuilder.Entity("SocialDating.Api.Data.AppRuntimeSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BannerBody")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("banner_body");
+
+                    b.Property<bool>("BannerEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("banner_enabled");
+
+                    b.Property<string>("BannerTitle")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("banner_title");
+
+                    b.Property<string>("ChatKeywordList")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("chat_keyword_list");
+
+                    b.Property<int>("DailyFreePointsMale")
+                        .HasColumnType("integer")
+                        .HasColumnName("daily_free_points_male");
+
+                    b.Property<int>("ExtraSwipePoints")
+                        .HasColumnType("integer")
+                        .HasColumnName("extra_swipe_points");
+
+                    b.Property<int>("FreeDailySwipesMale")
+                        .HasColumnType("integer")
+                        .HasColumnName("free_daily_swipes_male");
+
+                    b.Property<bool>("KillChatMessaging")
+                        .HasColumnType("boolean")
+                        .HasColumnName("kill_chat_messaging");
+
+                    b.Property<bool>("KillDiscovery")
+                        .HasColumnType("boolean")
+                        .HasColumnName("kill_discovery");
+
+                    b.Property<bool>("KillPremiumCharges")
+                        .HasColumnType("boolean")
+                        .HasColumnName("kill_premium_charges");
+
+                    b.Property<bool>("KillReferrals")
+                        .HasColumnType("boolean")
+                        .HasColumnName("kill_referrals");
+
+                    b.Property<bool>("KillWithdrawals")
+                        .HasColumnType("boolean")
+                        .HasColumnName("kill_withdrawals");
+
+                    b.Property<bool>("MaintenanceMode")
+                        .HasColumnType("boolean")
+                        .HasColumnName("maintenance_mode");
+
+                    b.Property<int>("MinClientBuild")
+                        .HasColumnType("integer")
+                        .HasColumnName("min_client_build");
+
+                    b.Property<int>("MinWithdrawalPoints")
+                        .HasColumnType("integer")
+                        .HasColumnName("min_withdrawal_points");
+
+                    b.Property<int>("PremiumActionPoints")
+                        .HasColumnType("integer")
+                        .HasColumnName("premium_action_points");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("UpdatedByEmail")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("updated_by_email");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("app_runtime_settings", (string)null);
+                });
+
+            modelBuilder.Entity("SocialDating.Api.Data.AuthBlockEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean")
+                        .HasColumnName("active");
+
+                    b.Property<DateTimeOffset?>("ClearedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cleared_at");
+
+                    b.Property<Guid?>("ClearedByStaffId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cleared_by_staff_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedByStaffId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_staff_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Kind", "Value", "Active");
+
+                    b.ToTable("auth_block_entries", (string)null);
                 });
 
             modelBuilder.Entity("SocialDating.Api.Data.Block", b =>
@@ -127,6 +432,70 @@ namespace SocialDating.Api.Data.Migrations
                     b.HasIndex("BlockedAccountId");
 
                     b.ToTable("blocks", (string)null);
+                });
+
+            modelBuilder.Entity("SocialDating.Api.Data.ChatKeywordHit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Keyword")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("keyword");
+
+                    b.Property<Guid>("MatchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("match_id");
+
+                    b.Property<string>("MessageBody")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("message_body");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("message_id");
+
+                    b.Property<string>("ResolutionNote")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("resolution_note");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<Guid?>("ResolvedByStaffId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resolved_by_staff_id");
+
+                    b.Property<Guid>("SenderAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sender_account_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SenderAccountId");
+
+                    b.HasIndex("Status", "CreatedAt");
+
+                    b.ToTable("chat_keyword_hits", (string)null);
                 });
 
             modelBuilder.Entity("SocialDating.Api.Data.ChatMember", b =>
@@ -261,6 +630,10 @@ namespace SocialDating.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<DateTimeOffset?>("HiddenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("hidden_at");
+
                     b.Property<Guid>("MatchId")
                         .HasColumnType("uuid")
                         .HasColumnName("match_id");
@@ -278,6 +651,142 @@ namespace SocialDating.Api.Data.Migrations
                     b.HasIndex("MatchId", "CreatedAt");
 
                     b.ToTable("messages", (string)null);
+                });
+
+            modelBuilder.Entity("SocialDating.Api.Data.ModerationAppeal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("account_id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("body");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("FiledBy")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("filed_by");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("ResolutionNote")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("resolution_note");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<Guid?>("ResolvedByStaffId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resolved_by_staff_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("Status", "CreatedAt");
+
+                    b.ToTable("moderation_appeals", (string)null);
+                });
+
+            modelBuilder.Entity("SocialDating.Api.Data.ModerationReport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ClaimedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("claimed_at");
+
+                    b.Property<string>("ClaimedByEmail")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("claimed_by_email");
+
+                    b.Property<Guid?>("ClaimedByStaffId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("claimed_by_staff_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("detail");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("ReportedAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reported_account_id");
+
+                    b.Property<Guid>("ReporterAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reporter_account_id");
+
+                    b.Property<string>("ResolutionNote")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("resolution_note");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<Guid?>("ResolvedByStaffId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resolved_by_staff_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClaimedByStaffId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("moderation_reports", (string)null);
                 });
 
             modelBuilder.Entity("SocialDating.Api.Data.OtpChallenge", b =>
@@ -350,6 +859,10 @@ namespace SocialDating.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<DateTimeOffset?>("HiddenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("hidden_at");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -358,15 +871,120 @@ namespace SocialDating.Api.Data.Migrations
                         .HasDefaultValue("profile")
                         .HasColumnName("kind");
 
+                    b.Property<string>("ReviewReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("review_reason");
+
+                    b.Property<string>("ReviewStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("pending")
+                        .HasColumnName("review_status");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reviewed_at");
+
+                    b.Property<string>("ReviewedByEmail")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("reviewed_by_email");
+
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer")
                         .HasColumnName("sort_order");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ReviewStatus");
+
                     b.HasIndex("AccountId", "SortOrder");
 
                     b.ToTable("photos", (string)null);
+                });
+
+            modelBuilder.Entity("SocialDating.Api.Data.PromoCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean")
+                        .HasColumnName("active");
+
+                    b.Property<string>("Bucket")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("bucket");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedByEmail")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("created_by_email");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<int>("MaxRedemptions")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_redemptions");
+
+                    b.Property<int>("Points")
+                        .HasColumnType("integer")
+                        .HasColumnName("points");
+
+                    b.Property<int>("RedemptionCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("redemption_count");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("promo_codes", (string)null);
+                });
+
+            modelBuilder.Entity("SocialDating.Api.Data.PromoRedemption", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("account_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("PromoCodeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("promo_code_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PromoCodeId", "AccountId")
+                        .IsUnique();
+
+                    b.ToTable("promo_redemptions", (string)null);
                 });
 
             modelBuilder.Entity("SocialDating.Api.Data.ReferralCommission", b =>
@@ -481,9 +1099,19 @@ namespace SocialDating.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("DeviceId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("device_id");
+
                     b.Property<DateTimeOffset>("ExpiresAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("ip_address");
 
                     b.Property<DateTimeOffset?>("RevokedAt")
                         .HasColumnType("timestamp with time zone")
@@ -494,14 +1122,151 @@ namespace SocialDating.Api.Data.Migrations
                         .HasColumnType("bytea")
                         .HasColumnName("token_hash");
 
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("user_agent");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AccountId");
+
+                    b.HasIndex("DeviceId");
+
+                    b.HasIndex("IpAddress");
 
                     b.HasIndex("TokenHash")
                         .IsUnique();
 
                     b.ToTable("refresh_tokens", (string)null);
+                });
+
+            modelBuilder.Entity("SocialDating.Api.Data.StaffCaseNote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("account_id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("body");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("StaffEmail")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("staff_email");
+
+                    b.Property<Guid>("StaffUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("staff_user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId", "CreatedAt");
+
+                    b.ToTable("staff_case_notes", (string)null);
+                });
+
+            modelBuilder.Entity("SocialDating.Api.Data.StaffUser", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DisabledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disabled_at");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("display_name");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("email");
+
+                    b.Property<DateTimeOffset?>("LastLoginAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_login_at");
+
+                    b.Property<byte[]>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("password_hash");
+
+                    b.Property<byte[]>("PasswordSalt")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("password_salt");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("role");
+
+                    b.Property<DateTimeOffset?>("TokensValidAfter")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("tokens_valid_after");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.ToTable("staff_users", (string)null);
+                });
+
+            modelBuilder.Entity("SocialDating.Api.Data.StaffWatchEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("account_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("note");
+
+                    b.Property<Guid>("StaffUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("staff_user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StaffUserId", "AccountId")
+                        .IsUnique();
+
+                    b.ToTable("staff_watch_entries", (string)null);
                 });
 
             modelBuilder.Entity("SocialDating.Api.Data.Swipe", b =>

@@ -210,7 +210,7 @@ void main() {
       expect(find.text('1,500 pts'), findsWidgets);
     });
 
-    testWidgets('referral purchase review shows commission and company share', (
+    testWidgets('referral purchase review shows points without NPR share lines', (
       tester,
     ) async {
       usePhoneScreen(tester);
@@ -228,11 +228,9 @@ void main() {
       expect(find.text('Referral-linked review'), findsOneWidget);
       expect(find.text('NPR 100.00'), findsWidgets);
       expect(find.text('3,000 pts'), findsOneWidget);
-      expect(find.text('NPR 30.00'), findsOneWidget);
-      expect(find.text('NPR 10.00'), findsOneWidget);
-      expect(find.text('NPR 60.00'), findsOneWidget);
-      expect(find.text('Direct referral commission'), findsOneWidget);
-      expect(find.text('Company allocation'), findsOneWidget);
+      expect(find.text('Stated NPR equivalent'), findsNothing);
+      expect(find.text('Direct referral commission'), findsNothing);
+      expect(find.text('Company allocation'), findsNothing);
       expect(find.textContaining('not withdrawable'), findsWidgets);
     });
 

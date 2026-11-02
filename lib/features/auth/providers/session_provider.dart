@@ -6,6 +6,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../data/models/account_state.dart';
 import '../../../data/models/profile.dart';
 import 'auth_session_notifier.dart';
 
@@ -160,6 +161,9 @@ abstract class SessionNotifier extends Notifier<AuthSession> {
   /// Helper text shown on the sign-in screens in mock builds. `null` when
   /// verification is real. When non-null the UI must label the flow as a mock.
   String? get signInHint;
+
+  /// Latest account snapshot from auth, if any.
+  AccountState? get account => null;
 }
 
 /// A one-time message to show after a session ends (consumed by the welcome

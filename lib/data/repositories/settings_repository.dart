@@ -10,12 +10,13 @@ abstract interface class SettingsRepository {
 
   Future<UserPreferences> savePreferences(UserPreferences preferences);
 
-  /// Records a mock report on this device. Does not notify moderators.
+  /// Submits a safety report. API mode requires [reportedAccountId].
   Future<SafetyReport> submitReport({
     required String category,
     String details,
     String? attachmentAsset,
     String? subjectName,
+    String? reportedAccountId,
   });
 
   Future<SafetyReport?> lastReport();

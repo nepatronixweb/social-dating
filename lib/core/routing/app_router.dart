@@ -443,6 +443,7 @@ GoRouter buildRouter({
             path: 'report',
             builder: (context, state) => ReportUserScreen(
               subjectName: state.uri.queryParameters['name'],
+              reportedAccountId: state.uri.queryParameters['id'],
             ),
           ),
         ],

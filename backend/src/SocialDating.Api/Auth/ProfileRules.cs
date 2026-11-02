@@ -81,8 +81,14 @@ public static class ProfileRules
     /// Female, LGBTQ+ and other accounts have every Premium feature at no charge.
     public static bool HasComplimentaryPremium(string? gender) => CanWithdraw(gender);
 
+    public static bool HasComplimentaryPremium(Data.Account account) =>
+        account.StaffComplimentaryPremium || CanWithdraw(account.Gender);
+
     /// Only male accounts buy a subscription for Premium.
     public static bool NeedsPaidSubscription(string? gender) => IsMale(gender);
+
+    public static bool NeedsPaidSubscription(Data.Account account) =>
+        IsMale(account.Gender) && !account.StaffComplimentaryPremium;
 
     /// Male accounts see female and LGBTQ+ (including stored transgender).
     /// Female, LGBTQ+ and other accounts see male.

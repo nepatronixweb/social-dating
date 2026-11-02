@@ -400,12 +400,12 @@ void main() {
         expect(deck.map((p) => p.id), isNot(contains('mock-1')));
         expect(deck.map((p) => p.id), isNot(contains('mock-2')));
 
-        await swipes.undoLast(); // Avery
+        await swipes.undoLast(confirmedPaid: true); // Avery
         expect(
           (await matching.fetchLikesSent()).map((l) => l.profile.id),
           isNot(contains('mock-1')),
         );
-        await swipes.undoLast(); // Jordan
+        await swipes.undoLast(confirmedPaid: true); // Jordan
         expect(await _matchIds(matching), isNot(contains('match-mock-2')));
       },
     );
@@ -1059,8 +1059,7 @@ void main() {
       await tester.enterText(find.byType(TextField), 'See you Friday');
       await tester.pump();
       await tester.tap(find.byTooltip('Send message'));
-      await tester.pump();
-      await tapVisible(tester, find.text('Pay NPR 0.30 and send'));
+      await pumpFrames(tester);
       expect(find.text('See you Friday'), findsOneWidget);
 
       router.go(AppRoutes.chat);

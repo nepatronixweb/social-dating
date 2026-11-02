@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #0f1419;
+  --muted: #5c6b7a;
+  --line: #d8e0e8;
+  --paper: #f3f6f9;
+  --panel: #ffffff;
+  --accent: #0b6e4f;
+  --accent-soft: #e6f4ef;
+  --danger: #9b1c1c;
+  --warn: #9a6700;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 500px at 10% -10%, #dce8f2 0%, transparent 55%),
+    radial-gradient(900px 420px at 100% 0%, #d9efe6 0%, transparent 50%),
+    var(--paper);
+  font-family: var(--font-sans), "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.btn:hover {
+  background: #f7fafc;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #095c42;
+}
+
+.btn-danger {
+  background: #fff5f5;
+  border-color: #f1c0c0;
+  color: var(--danger);
+}
+
+.field {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 0.6rem 0.75rem;
+  outline: none;
+}
+
+.field:focus {
+  border-color: #8aabb8;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.table th {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+}
+
+.badge-open {
+  background: #fff8e8;
+  border-color: #f0d58a;
+  color: var(--warn);
+}
+
+.badge-ok {
+  background: var(--accent-soft);
+  border-color: #b7dfc8;
+  color: var(--accent);
+}
+
+.err {
+  color: var(--danger);
+  font-size: 0.9rem;
+}

@@ -29,6 +29,19 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<UserPrompt> UserPrompts => Set<UserPrompt>();
     public DbSet<UserVerification> UserVerifications => Set<UserVerification>();
     public DbSet<UserPrivacy> UserPrivacies => Set<UserPrivacy>();
+    public DbSet<StaffUser> StaffUsers => Set<StaffUser>();
+    public DbSet<AdminAuditEvent> AdminAuditEvents => Set<AdminAuditEvent>();
+    public DbSet<ModerationReport> ModerationReports => Set<ModerationReport>();
+    public DbSet<ModerationAppeal> ModerationAppeals => Set<ModerationAppeal>();
+    public DbSet<ChatKeywordHit> ChatKeywordHits => Set<ChatKeywordHit>();
+    public DbSet<StaffWatchEntry> StaffWatchEntries => Set<StaffWatchEntry>();
+    public DbSet<AuthBlockEntry> AuthBlockEntries => Set<AuthBlockEntry>();
+    public DbSet<StaffCaseNote> StaffCaseNotes => Set<StaffCaseNote>();
+    public DbSet<AdminRefundRequest> AdminRefundRequests => Set<AdminRefundRequest>();
+    public DbSet<AppRuntimeSettings> AppRuntimeSettings => Set<AppRuntimeSettings>();
+    public DbSet<AppConfigRevision> AppConfigRevisions => Set<AppConfigRevision>();
+    public DbSet<PromoCode> PromoCodes => Set<PromoCode>();
+    public DbSet<PromoRedemption> PromoRedemptions => Set<PromoRedemption>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -41,6 +54,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
             entity.Property(x => x.DeletedAt).HasColumnName("deleted_at");
+            entity.Property(x => x.SuspendedAt).HasColumnName("suspended_at");
+            entity.Property(x => x.ShadowBannedAt).HasColumnName("shadow_banned_at");
+            entity.Property(x => x.LastWarnedAt).HasColumnName("last_warned_at");
+            entity.Property(x => x.StaffComplimentaryPremium)
+                .HasColumnName("staff_complimentary_premium");
             entity.Property(x => x.TermsAcceptedAt).HasColumnName("terms_accepted_at");
             entity.Property(x => x.AgeEligible).HasColumnName("age_eligible");
             entity.Property(x => x.AgeCheckedAt).HasColumnName("age_checked_at");
@@ -87,6 +105,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
             entity.Property(x => x.ExpiresAt).HasColumnName("expires_at");
             entity.Property(x => x.RevokedAt).HasColumnName("revoked_at");
+            entity.Property(x => x.IpAddress).HasColumnName("ip_address").HasMaxLength(64);
+            entity.Property(x => x.DeviceId).HasColumnName("device_id").HasMaxLength(128);
+            entity.Property(x => x.UserAgent).HasColumnName("user_agent").HasMaxLength(256);
+            entity.HasIndex(x => x.DeviceId);
+            entity.HasIndex(x => x.IpAddress);
             entity.HasOne(x => x.Account)
                 .WithMany(x => x.RefreshTokens)
                 .HasForeignKey(x => x.AccountId)
@@ -150,6 +173,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(x => x.Body).HasColumnName("body");
             entity.Property(x => x.PhotoId).HasColumnName("photo_id");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.HiddenAt).HasColumnName("hidden_at");
         });
 
         model.Entity<ChatMember>(entity =>
@@ -174,6 +198,29 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(x => x.ContentType).HasColumnName("content_type");
             entity.Property(x => x.Kind).HasColumnName("kind").HasMaxLength(16).HasDefaultValue("profile");
             entity.Property(x => x.ByteSize).HasColumnName("byte_size");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.HiddenAt).HasColumnName("hidden_at");
+            entity.Property(x => x.ReviewStatus)
+                .HasColumnName("review_status")
+                .HasMaxLength(16)
+                .HasDefaultValue("pending");
+            entity.Property(x => x.ReviewReason).HasColumnName("review_reason").HasMaxLength(32);
+            entity.Property(x => x.ReviewedAt).HasColumnName("reviewed_at");
+            entity.Property(x => x.ReviewedByEmail)
+                .HasColumnName("reviewed_by_email")
+                .HasMaxLength(120);
+            entity.HasIndex(x => x.ReviewStatus);
+        });
+
+        model.Entity<StaffCaseNote>(entity =>
+        {
+            entity.ToTable("staff_case_notes");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.AccountId, x.CreatedAt });
+            entity.Property(x => x.AccountId).HasColumnName("account_id");
+            entity.Property(x => x.StaffUserId).HasColumnName("staff_user_id");
+            entity.Property(x => x.StaffEmail).HasColumnName("staff_email");
+            entity.Property(x => x.Body).HasColumnName("body");
             entity.Property(x => x.CreatedAt).HasColumnName("created_at");
         });
 
@@ -366,6 +413,203 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(x => x.Discoverable).HasColumnName("discoverable");
             entity.Property(x => x.Visibility).HasColumnName("visibility");
             entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        model.Entity<StaffUser>(entity =>
+        {
+            entity.ToTable("staff_users");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.Email).IsUnique();
+            entity.Property(x => x.Email).HasColumnName("email");
+            entity.Property(x => x.DisplayName).HasColumnName("display_name");
+            entity.Property(x => x.Role).HasColumnName("role");
+            entity.Property(x => x.PasswordSalt).HasColumnName("password_salt");
+            entity.Property(x => x.PasswordHash).HasColumnName("password_hash");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.DisabledAt).HasColumnName("disabled_at");
+            entity.Property(x => x.TokensValidAfter).HasColumnName("tokens_valid_after");
+            entity.Property(x => x.LastLoginAt).HasColumnName("last_login_at");
+        });
+
+        model.Entity<AppConfigRevision>(entity =>
+        {
+            entity.ToTable("app_config_revisions");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.CreatedAt);
+            entity.Property(x => x.SnapshotJson).HasColumnName("snapshot_json");
+            entity.Property(x => x.ChangedByEmail).HasColumnName("changed_by_email");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        model.Entity<AdminAuditEvent>(entity =>
+        {
+            entity.ToTable("admin_audit_events");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.CreatedAt);
+            entity.HasIndex(x => x.StaffUserId);
+            entity.Property(x => x.StaffUserId).HasColumnName("staff_user_id");
+            entity.Property(x => x.StaffEmail).HasColumnName("staff_email");
+            entity.Property(x => x.Action).HasColumnName("action");
+            entity.Property(x => x.TargetType).HasColumnName("target_type");
+            entity.Property(x => x.TargetId).HasColumnName("target_id");
+            entity.Property(x => x.Detail).HasColumnName("detail");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        model.Entity<ModerationReport>(entity =>
+        {
+            entity.ToTable("moderation_reports");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.Status);
+            entity.HasIndex(x => x.CreatedAt);
+            entity.Property(x => x.ReporterAccountId).HasColumnName("reporter_account_id");
+            entity.Property(x => x.ReportedAccountId).HasColumnName("reported_account_id");
+            entity.Property(x => x.Reason).HasColumnName("reason");
+            entity.Property(x => x.Detail).HasColumnName("detail");
+            entity.Property(x => x.Status).HasColumnName("status");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.ResolvedAt).HasColumnName("resolved_at");
+            entity.Property(x => x.ResolvedByStaffId).HasColumnName("resolved_by_staff_id");
+            entity.Property(x => x.ResolutionNote).HasColumnName("resolution_note");
+            entity.Property(x => x.ClaimedByStaffId).HasColumnName("claimed_by_staff_id");
+            entity.Property(x => x.ClaimedByEmail).HasColumnName("claimed_by_email");
+            entity.Property(x => x.ClaimedAt).HasColumnName("claimed_at");
+            entity.HasIndex(x => x.ClaimedByStaffId);
+        });
+
+        model.Entity<AdminRefundRequest>(entity =>
+        {
+            entity.ToTable("admin_refund_requests");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.Status);
+            entity.HasIndex(x => x.CreatedAt);
+            entity.HasIndex(x => new { x.AccountId, x.SourceId, x.Status });
+            entity.Property(x => x.AccountId).HasColumnName("account_id");
+            entity.Property(x => x.SourceId).HasColumnName("source_id");
+            entity.Property(x => x.Points).HasColumnName("points");
+            entity.Property(x => x.RequestedByStaffId).HasColumnName("requested_by_staff_id");
+            entity.Property(x => x.RequestedByEmail).HasColumnName("requested_by_email");
+            entity.Property(x => x.ResolvedByStaffId).HasColumnName("resolved_by_staff_id");
+            entity.Property(x => x.ResolvedByEmail).HasColumnName("resolved_by_email");
+            entity.Property(x => x.Status).HasColumnName("status");
+            entity.Property(x => x.Note).HasColumnName("note");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.ResolvedAt).HasColumnName("resolved_at");
+        });
+
+        model.Entity<AppRuntimeSettings>(entity =>
+        {
+            entity.ToTable("app_runtime_settings");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.PremiumActionPoints).HasColumnName("premium_action_points");
+            entity.Property(x => x.ExtraSwipePoints).HasColumnName("extra_swipe_points");
+            entity.Property(x => x.DailyFreePointsMale).HasColumnName("daily_free_points_male");
+            entity.Property(x => x.FreeDailySwipesMale).HasColumnName("free_daily_swipes_male");
+            entity.Property(x => x.MinWithdrawalPoints).HasColumnName("min_withdrawal_points");
+            entity.Property(x => x.KillWithdrawals).HasColumnName("kill_withdrawals");
+            entity.Property(x => x.KillPremiumCharges).HasColumnName("kill_premium_charges");
+            entity.Property(x => x.KillReferrals).HasColumnName("kill_referrals");
+            entity.Property(x => x.KillDiscovery).HasColumnName("kill_discovery");
+            entity.Property(x => x.KillChatMessaging).HasColumnName("kill_chat_messaging");
+            entity.Property(x => x.MaintenanceMode).HasColumnName("maintenance_mode");
+            entity.Property(x => x.MinClientBuild).HasColumnName("min_client_build");
+            entity.Property(x => x.BannerEnabled).HasColumnName("banner_enabled");
+            entity.Property(x => x.BannerTitle).HasColumnName("banner_title");
+            entity.Property(x => x.BannerBody).HasColumnName("banner_body");
+            entity.Property(x => x.ChatKeywordList).HasColumnName("chat_keyword_list");
+            entity.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(x => x.UpdatedByEmail).HasColumnName("updated_by_email");
+        });
+
+        model.Entity<ChatKeywordHit>(entity =>
+        {
+            entity.ToTable("chat_keyword_hits");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.Status, x.CreatedAt });
+            entity.HasIndex(x => x.SenderAccountId);
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.MessageId).HasColumnName("message_id");
+            entity.Property(x => x.MatchId).HasColumnName("match_id");
+            entity.Property(x => x.SenderAccountId).HasColumnName("sender_account_id");
+            entity.Property(x => x.Keyword).HasColumnName("keyword");
+            entity.Property(x => x.MessageBody).HasColumnName("message_body");
+            entity.Property(x => x.Status).HasColumnName("status");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.ResolvedAt).HasColumnName("resolved_at");
+            entity.Property(x => x.ResolvedByStaffId).HasColumnName("resolved_by_staff_id");
+            entity.Property(x => x.ResolutionNote).HasColumnName("resolution_note");
+        });
+
+        model.Entity<StaffWatchEntry>(entity =>
+        {
+            entity.ToTable("staff_watch_entries");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.StaffUserId, x.AccountId }).IsUnique();
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.StaffUserId).HasColumnName("staff_user_id");
+            entity.Property(x => x.AccountId).HasColumnName("account_id");
+            entity.Property(x => x.Note).HasColumnName("note");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        model.Entity<AuthBlockEntry>(entity =>
+        {
+            entity.ToTable("auth_block_entries");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.Kind, x.Value, x.Active });
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.Kind).HasColumnName("kind");
+            entity.Property(x => x.Value).HasColumnName("value");
+            entity.Property(x => x.Reason).HasColumnName("reason");
+            entity.Property(x => x.Active).HasColumnName("active");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.CreatedByStaffId).HasColumnName("created_by_staff_id");
+            entity.Property(x => x.ClearedAt).HasColumnName("cleared_at");
+            entity.Property(x => x.ClearedByStaffId).HasColumnName("cleared_by_staff_id");
+        });
+
+        model.Entity<ModerationAppeal>(entity =>
+        {
+            entity.ToTable("moderation_appeals");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.Status, x.CreatedAt });
+            entity.HasIndex(x => x.AccountId);
+            entity.Property(x => x.Id).HasColumnName("id");
+            entity.Property(x => x.AccountId).HasColumnName("account_id");
+            entity.Property(x => x.Kind).HasColumnName("kind");
+            entity.Property(x => x.Body).HasColumnName("body");
+            entity.Property(x => x.Status).HasColumnName("status");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+            entity.Property(x => x.ResolvedAt).HasColumnName("resolved_at");
+            entity.Property(x => x.ResolvedByStaffId).HasColumnName("resolved_by_staff_id");
+            entity.Property(x => x.ResolutionNote).HasColumnName("resolution_note");
+            entity.Property(x => x.FiledBy).HasColumnName("filed_by");
+        });
+
+        model.Entity<PromoCode>(entity =>
+        {
+            entity.ToTable("promo_codes");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.Property(x => x.Code).HasColumnName("code");
+            entity.Property(x => x.Points).HasColumnName("points");
+            entity.Property(x => x.Bucket).HasColumnName("bucket");
+            entity.Property(x => x.MaxRedemptions).HasColumnName("max_redemptions");
+            entity.Property(x => x.RedemptionCount).HasColumnName("redemption_count");
+            entity.Property(x => x.ExpiresAt).HasColumnName("expires_at");
+            entity.Property(x => x.Active).HasColumnName("active");
+            entity.Property(x => x.CreatedByEmail).HasColumnName("created_by_email");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
+        });
+
+        model.Entity<PromoRedemption>(entity =>
+        {
+            entity.ToTable("promo_redemptions");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.PromoCodeId, x.AccountId }).IsUnique();
+            entity.Property(x => x.PromoCodeId).HasColumnName("promo_code_id");
+            entity.Property(x => x.AccountId).HasColumnName("account_id");
+            entity.Property(x => x.CreatedAt).HasColumnName("created_at");
         });
     }
 

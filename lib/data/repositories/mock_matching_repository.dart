@@ -312,10 +312,33 @@ class MockMatchingRepository implements MatchingRepository, ChatRepository {
   );
 
   @override
-  Future<List<Match>> fetchMatches() => _fetch(
-    () => [..._matches]..sort((a, b) => b.matchedAt.compareTo(a.matchedAt)),
-    const [],
-  );
+  Future<List<Match>> fetchMatches() => _fetch(() {
+    final disclose = _viewerGender().canWithdrawAndSetDailyPreference;
+    final items = [
+      for (final match in _matches)
+        Match(
+          id: match.id,
+          profile: disclose && match.profile.gender == ProfileGender.male
+              ? match.profile.copyWith(
+                  spendablePoints:
+                      match.profile.spendablePoints ??
+                      (2000 +
+                          (match.profile.id.codeUnits.fold(
+                                0,
+                                (sum, unit) => sum + unit,
+                              ) %
+                              30) *
+                          100),
+                )
+              : match.profile.copyWith(clearSpendablePoints: true),
+          matchedAt: match.matchedAt,
+          isNew: match.isNew,
+          lastActiveAt: match.lastActiveAt,
+          conversationId: match.conversationId,
+        ),
+    ]..sort((a, b) => b.matchedAt.compareTo(a.matchedAt));
+    return items;
+  }, const []);
 
   @override
   Future<List<MatchHistoryEntry>> fetchHistory() => _fetch(

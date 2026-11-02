@@ -33,8 +33,8 @@ public sealed class SubscriptionService(AppDbContext db) : ISubscriptionService
     )
     {
         var account = await RequireAccount(accountId, ct);
-        var complimentary = ProfileRules.HasComplimentaryPremium(account.Gender);
-        var needsPaid = ProfileRules.NeedsPaidSubscription(account.Gender);
+        var complimentary = ProfileRules.HasComplimentaryPremium(account);
+        var needsPaid = ProfileRules.NeedsPaidSubscription(account);
         return new SubscriptionOverviewResponse(
             needsPaid,
             complimentary,
@@ -79,8 +79,8 @@ public sealed class SubscriptionService(AppDbContext db) : ISubscriptionService
             );
         }
 
-        if (ProfileRules.HasComplimentaryPremium(account.Gender)
-            || !ProfileRules.NeedsPaidSubscription(account.Gender))
+        if (ProfileRules.HasComplimentaryPremium(account)
+            || !ProfileRules.NeedsPaidSubscription(account))
         {
             throw new AuthException(
                 400,

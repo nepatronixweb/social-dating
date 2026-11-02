@@ -221,6 +221,107 @@ class MockWalletRepository implements WalletRepository {
     );
   }
 
+  /// Spendable promotional + earned points (same total the header chip shows).
+  int get spendable {
+    final summary = _summary();
+    return summary.promotionalPoints + summary.earnedPoints;
+  }
+
+  /// Debits promotional first, then earned. Returns false when funds are short.
+  bool tryCharge({
+    required int points,
+    required String title,
+    required WalletActivityKind kind,
+    String detail = '',
+  }) {
+    if (points <= 0) return true;
+    final summary = _summary();
+    if (summary.promotionalPoints + summary.earnedPoints < points) {
+      return false;
+    }
+
+    var remaining = points;
+    final fromPromo = summary.promotionalPoints < remaining
+        ? summary.promotionalPoints
+        : remaining;
+    if (fromPromo > 0) {
+      _counter += 1;
+      _transactions.add(
+        WalletTransaction(
+          id: 'mock-tx-$_counter',
+          title: title,
+          credits: -fromPromo,
+          occurredAt: _now(),
+          bucket: PointBucket.promotional,
+          kind: kind,
+          detail: detail,
+        ),
+      );
+      remaining -= fromPromo;
+    }
+    if (remaining > 0) {
+      _counter += 1;
+      _transactions.add(
+        WalletTransaction(
+          id: 'mock-tx-$_counter',
+          title: title,
+          credits: -remaining,
+          occurredAt: _now(),
+          bucket: PointBucket.earned,
+          kind: kind,
+          detail: detail,
+        ),
+      );
+    }
+    return true;
+  }
+
+  /// Credits promotional points (daily free grant, refunds, etc.).
+  void creditPromotional({
+    required int points,
+    required String title,
+    required WalletActivityKind kind,
+    String detail = '',
+    String? id,
+  }) {
+    if (points <= 0) return;
+    if (id != null && _transactions.any((tx) => tx.id == id)) return;
+    _counter += 1;
+    _transactions.add(
+      WalletTransaction(
+        id: id ?? 'mock-tx-$_counter',
+        title: title,
+        credits: points,
+        occurredAt: _now(),
+        bucket: PointBucket.promotional,
+        kind: kind,
+        detail: detail,
+      ),
+    );
+  }
+
+  /// Credits earned points (refund of a prior earned spend).
+  void creditEarned({
+    required int points,
+    required String title,
+    required WalletActivityKind kind,
+    String detail = '',
+  }) {
+    if (points <= 0) return;
+    _counter += 1;
+    _transactions.add(
+      WalletTransaction(
+        id: 'mock-tx-$_counter',
+        title: title,
+        credits: points,
+        occurredAt: _now(),
+        bucket: PointBucket.earned,
+        kind: kind,
+        detail: detail,
+      ),
+    );
+  }
+
   bool get _eligibleAccount {
     final gender = _viewerGender();
     return gender.canWithdrawAndSetDailyPreference;
@@ -423,5 +524,31 @@ class MockWalletRepository implements WalletRepository {
     } finally {
       _inFlight = false;
     }
+  }
+
+  @override
+  Future<({int points, String bucket, int spendablePoints})> redeemPromo(
+    String code,
+  ) async {
+    final trimmed = code.trim();
+    if (trimmed.length < 3) {
+      throw const ValidationFailure('Enter a promo code.');
+    }
+    if (latency > Duration.zero) await Future<void>.delayed(latency);
+    if (_scenario() == MockScenario.failure) {
+      throw const NetworkFailure();
+    }
+    const points = 100;
+    creditPromotional(
+      points: points,
+      title: 'Promo code',
+      kind: WalletActivityKind.other,
+      detail: 'Mock redeem of $trimmed',
+    );
+    return (
+      points: points,
+      bucket: 'promotional',
+      spendablePoints: spendable,
+    );
   }
 }

@@ -34,21 +34,34 @@ public static class AuthEndpoints
 
     static async Task<IResult> Verify(
         VerifyCodeRequest body,
+        HttpContext http,
         IAuthService auth,
         CancellationToken ct
     )
     {
-        var result = await auth.VerifyAsync(body.Phone, body.Code, ct, body.ReferralCode, body.Login);
+        var result = await auth.VerifyAsync(
+            body.Phone,
+            body.Code,
+            ct,
+            body.ReferralCode,
+            body.Login,
+            ClientContext.FromHttp(http)
+        );
         return Results.Ok(result);
     }
 
     static async Task<IResult> Refresh(
         RefreshRequest body,
+        HttpContext http,
         IAuthService auth,
         CancellationToken ct
     )
     {
-        var result = await auth.RefreshAsync(body.RefreshToken, ct);
+        var result = await auth.RefreshAsync(
+            body.RefreshToken,
+            ct,
+            ClientContext.FromHttp(http)
+        );
         return Results.Ok(result);
     }
 

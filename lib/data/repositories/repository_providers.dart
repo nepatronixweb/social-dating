@@ -111,7 +111,10 @@ final notificationRepositoryProvider = Provider<NotificationRepository>(
 final settingsRepositoryProvider = Provider<SettingsRepository>(
   (ref) => IntegrationConfig.useMockRepositories
       ? ref.watch(mockSettingsRepositoryProvider)
-      : const ApiSettingsRepository(),
+      : ApiSettingsRepository(
+          client: ref.watch(apiClientProvider),
+          tokens: ref.watch(tokenStorageProvider),
+        ),
 );
 
 final referralRepositoryProvider = Provider<ReferralRepository>(

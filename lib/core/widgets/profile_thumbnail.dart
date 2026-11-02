@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import '../../data/models/profile.dart';
@@ -17,6 +19,7 @@ class ProfileThumbnail extends StatelessWidget {
     this.size = 72,
     this.showOnline = true,
     this.dimmed = false,
+    this.blurred = false,
   });
 
   final Profile profile;
@@ -28,10 +31,36 @@ class ProfileThumbnail extends StatelessWidget {
   /// Faded look for people who are no longer connected (history).
   final bool dimmed;
 
+  /// Heavy blur for Premium-gated likes (identity hidden until subscribed).
+  final bool blurred;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final dot = size * 0.22;
+    final image =
+        profileImageProvider(profile.photos.firstOrNull) == null
+        ? PhotoPlaceholder(seed: profile.photoSeed)
+        : Image(
+            image: profileImageProvider(profile.photos.first)!,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) =>
+                PhotoPlaceholder(seed: profile.photoSeed),
+          );
+
+    Widget photo = ClipRRect(
+      borderRadius: AppRadii.borderMd,
+      child: blurred
+          ? ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+              child: image,
+            )
+          : image,
+    );
+
+    if (dimmed) {
+      photo = Opacity(opacity: 0.5, child: photo);
+    }
 
     return ExcludeSemantics(
       child: SizedBox.square(
@@ -39,24 +68,8 @@ class ProfileThumbnail extends StatelessWidget {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            Positioned.fill(
-              child: Opacity(
-                opacity: dimmed ? 0.5 : 1,
-                child: ClipRRect(
-                  borderRadius: AppRadii.borderMd,
-                  child:
-                      profileImageProvider(profile.photos.firstOrNull) == null
-                      ? PhotoPlaceholder(seed: profile.photoSeed)
-                      : Image(
-                          image: profileImageProvider(profile.photos.first)!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) =>
-                              PhotoPlaceholder(seed: profile.photoSeed),
-                        ),
-                ),
-              ),
-            ),
-            if (showOnline && profile.isOnline && !dimmed)
+            Positioned.fill(child: photo),
+            if (showOnline && profile.isOnline && !dimmed && !blurred)
               Positioned(
                 right: -2,
                 bottom: -2,
@@ -70,7 +83,7 @@ class ProfileThumbnail extends StatelessWidget {
                   ),
                 ),
               ),
-            if (profile.isVerified && !dimmed)
+            if (profile.isVerified && !dimmed && !blurred)
               Positioned(
                 left: -4,
                 top: -4,

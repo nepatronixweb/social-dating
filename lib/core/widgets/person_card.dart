@@ -25,6 +25,7 @@ class PersonCard extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.dimmed = false,
+    this.blurred = false,
     this.semanticLabel,
   });
 
@@ -45,24 +46,30 @@ class PersonCard extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool dimmed;
+
+  /// Hides identity (blurred photo + masked name) until Premium unlocks it.
+  final bool blurred;
   final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final text = context.text;
+    final title = blurred
+        ? 'Someone liked you'
+        : '${profile.displayName}, ${profile.age}';
 
     final details = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          '${profile.displayName}, ${profile.age}',
+          title,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: text.titleMedium,
         ),
-        if (badges.isNotEmpty) ...[
+        if (!blurred && badges.isNotEmpty) ...[
           AppSpacing.gapXs,
           Wrap(
             spacing: AppSpacing.xs,
@@ -77,7 +84,7 @@ class PersonCard extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: text.bodySmall?.copyWith(color: palette.textMuted),
         ),
-        if (status != null)
+        if (!blurred && status != null)
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -110,7 +117,7 @@ class PersonCard extends StatelessWidget {
     final header = Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        ProfileThumbnail(profile: profile, dimmed: dimmed),
+        ProfileThumbnail(profile: profile, dimmed: dimmed, blurred: blurred),
         AppSpacing.gapMd,
         Expanded(child: details),
         if (trailing != null) ...[AppSpacing.gapSm, trailing!],

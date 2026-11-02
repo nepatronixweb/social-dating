@@ -3,6 +3,9 @@ abstract final class AppConstants {
   static const String appName = 'Social Dating';
   static const String tagline = 'Meet people worth meeting.';
 
+  /// Integer build used with remote `minClientBuild` (Phase 10 client ops).
+  static const int buildNumber = 1;
+
   /// Lockup line under the wordmark on branded entry screens.
   static const String lockupTagline = 'Real people · Real connections';
 

@@ -8,7 +8,8 @@ public static class ProfileMapper
     public static PublicProfileResponse? ToPublic(
         Account account,
         DateTimeOffset now,
-        IReadOnlyList<string>? photoUrls = null)
+        IReadOnlyList<string>? photoUrls = null,
+        int? spendablePoints = null)
     {
         if (account.DisplayName is null
             || account.BirthDate is null
@@ -34,7 +35,8 @@ public static class ProfileMapper
             null,
             account.Gender,
             null,
-            urls
+            urls,
+            spendablePoints
         );
     }
 }

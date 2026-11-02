@@ -117,9 +117,12 @@ abstract final class AppRoutes {
   static const String changePhone = '/account/phone';
   static const String deleteAccount = '/account/delete';
 
-  static String reportUser({String? name}) => Uri(
+  static String reportUser({String? name, String? accountId}) => Uri(
     path: report,
-    queryParameters: {if (name != null && name.isNotEmpty) 'name': name},
+    queryParameters: {
+      if (name != null && name.isNotEmpty) 'name': name,
+      if (accountId != null && accountId.isNotEmpty) 'id': accountId,
+    },
   ).toString();
 
   /// Debug-only design system gallery (registered only in debug builds).

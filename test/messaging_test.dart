@@ -19,7 +19,6 @@ import 'package:social_dating/data/repositories/mock_matching_repository.dart';
 import 'package:social_dating/data/repositories/mock_repository_providers.dart';
 import 'package:social_dating/features/auth/providers/session_provider.dart';
 import 'package:social_dating/features/chat/presentation/chat_conversation_screen.dart';
-import 'package:social_dating/features/chat/presentation/widgets/paid_message_dialog.dart';
 import 'package:social_dating/features/safety/presentation/report_user_screen.dart';
 import 'package:social_dating/features/wallet/presentation/wallet_screen.dart';
 
@@ -32,16 +31,11 @@ Future<void> tapVisible(WidgetTester tester, Finder finder) async {
   await pumpFrames(tester);
 }
 
-Future<void> sendPaid(
-  WidgetTester tester,
-  String text, {
-  String payLabel = 'Pay NPR 0.30 and send',
-}) async {
+Future<void> sendPaid(WidgetTester tester, String text) async {
   await tester.enterText(find.byType(TextField), text);
   await tester.pump();
   await tester.tap(find.byTooltip('Send message'));
-  await tester.pump();
-  await tapVisible(tester, find.text(payLabel));
+  await pumpFrames(tester);
 }
 
 void main() {
@@ -231,7 +225,7 @@ void main() {
   });
 
   group('conversation UI', () {
-    testWidgets('cost preview and paid confirm for a male account', (
+    testWidgets('cost preview shows without a pay confirmation sheet', (
       tester,
     ) async {
       usePhoneScreen(tester);
@@ -246,24 +240,10 @@ void main() {
       await tester.pump();
       expect(find.textContaining('3 words'), findsOneWidget);
       expect(find.text('Est. NPR 0.30 · 30 pts'), findsOneWidget);
-
-      await tester.tap(find.byTooltip('Send message'));
-      await tester.pump();
-      expect(find.byType(PaidMessageDialog), findsOneWidget);
-      expect(find.text('Estimated deduction'), findsOneWidget);
-      expect(find.textContaining('30 pts'), findsWidgets);
-      expect(find.text('Recipient / platform (80/20)'), findsOneWidget);
-      expect(find.textContaining('NPR 0.30'), findsWidgets);
-
-      await tapVisible(tester, find.text('Cancel'));
-      expect(find.text('See you Friday'), findsOneWidget);
-      expect(
-        containerOf(tester).read(mockSwipeRepositoryProvider).balancePaisa,
-        100,
-      );
+      expect(find.text('Send this paid message?'), findsNothing);
     });
 
-    testWidgets('confirming a paid send deducts the quoted mock points', (
+    testWidgets('paid send deducts the quoted mock points immediately', (
       tester,
     ) async {
       usePhoneScreen(tester);
@@ -280,6 +260,7 @@ void main() {
       );
       await sendPaid(tester, 'See you Friday');
       expect(find.text('See you Friday'), findsOneWidget);
+      expect(find.text('Send this paid message?'), findsNothing);
       expect(
         containerOf(tester).read(mockSwipeRepositoryProvider).balancePaisa,
         70,
@@ -309,8 +290,7 @@ void main() {
       );
 
       await tester.tap(find.text('Failed · Retry'));
-      await tester.pump();
-      await tapVisible(tester, find.text('Pay NPR 0.30 and send'));
+      await pumpFrames(tester);
       expect(find.text('Failed · Retry'), findsNothing);
       expect(find.text('See you Friday'), findsOneWidget);
       expect(

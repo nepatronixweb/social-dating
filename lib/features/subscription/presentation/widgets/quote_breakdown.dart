@@ -50,42 +50,14 @@ class QuoteBreakdown extends StatelessWidget {
           strong: true,
         ),
         AppSpacing.gapSm,
-        _Line(
-          label: 'Stated NPR equivalent',
-          value: formatNpr(quote.buyerPointsEquivalentPaisa),
-        ),
-        AppSpacing.gapSm,
         Text(
           quote.pointsWithdrawable
               ? 'Product policy currently treats these promotional points as '
                     'withdrawable.'
-              : 'These promotional points are not withdrawable. The '
-                    '${formatNpr(quote.buyerPointsEquivalentPaisa)} figure is '
-                    'a stated equivalent, not cash you can take out.',
+              : 'These promotional points are not withdrawable and are not '
+                    'cash you can take out.',
           style: muted,
         ),
-        if (quote.referralLinked) ...[
-          AppSpacing.gapLg,
-          _Line(
-            label: 'Direct referral commission',
-            value: formatNpr(quote.referralCommissionPaisa),
-            strong: true,
-          ),
-          AppSpacing.gapSm,
-          _Line(
-            label: 'Company allocation',
-            value: formatNpr(quote.companyAllocationPaisa),
-            strong: true,
-          ),
-          AppSpacing.gapSm,
-          Text(
-            'The ${formatNpr(quote.referralCommissionPaisa)} commission is a '
-            'cash-convertible reward for the referrer. It is not promotional '
-            'points. The ${formatNpr(quote.companyAllocationPaisa)} is shown '
-            'as the company share.',
-            style: muted,
-          ),
-        ],
       ],
     );
   }

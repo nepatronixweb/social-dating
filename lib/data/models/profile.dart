@@ -71,6 +71,7 @@ class Profile {
     this.lookingFor,
     this.photoAssets = const [],
     this.photoUrls = const [],
+    this.spendablePoints,
   });
 
   final String id;
@@ -99,11 +100,39 @@ class Profile {
   /// [photoAssets] instead.
   final List<String> photoUrls;
 
+  /// Male wallet balance disclosed to female / LGBTQ+ / other viewers only.
+  final int? spendablePoints;
+
   /// Photos to draw, preferring API URLs then mock assets.
   List<String> get photos => photoUrls.isNotEmpty ? photoUrls : photoAssets;
 
   /// Stable index used to pick a placeholder photo wash for this person.
   int get photoSeed => id.codeUnits.fold(0, (sum, unit) => sum + unit) % 6;
+
+  Profile copyWith({
+    ProfileGender? gender,
+    int? spendablePoints,
+    bool clearSpendablePoints = false,
+  }) => Profile(
+    id: id,
+    displayName: displayName,
+    age: age,
+    city: city,
+    bio: bio,
+    interests: interests,
+    isVerified: isVerified,
+    isOnline: isOnline,
+    photoCount: photoCount,
+    distanceKm: distanceKm,
+    occupation: occupation,
+    gender: gender ?? this.gender,
+    lookingFor: lookingFor,
+    photoAssets: photoAssets,
+    photoUrls: photoUrls,
+    spendablePoints: clearSpendablePoints
+        ? null
+        : (spendablePoints ?? this.spendablePoints),
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -122,7 +151,8 @@ class Profile {
       other.gender == gender &&
       other.lookingFor == lookingFor &&
       listEquals(other.photoAssets, photoAssets) &&
-      listEquals(other.photoUrls, photoUrls);
+      listEquals(other.photoUrls, photoUrls) &&
+      other.spendablePoints == spendablePoints;
 
   @override
   int get hashCode => Object.hash(
@@ -141,5 +171,6 @@ class Profile {
     lookingFor,
     Object.hashAll(photoAssets),
     Object.hashAll(photoUrls),
+    spendablePoints,
   );
 }

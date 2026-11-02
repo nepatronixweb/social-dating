@@ -97,32 +97,6 @@ class _SplashScreenState extends State<SplashScreen>
                       children: [
                         const Spacer(flex: 3),
                         const BrandMark(size: 128, glow: false),
-                        AppSpacing.gapLg,
-                        Semantics(
-                          header: true,
-                          child: BrandWordmark(
-                            style: context.text.headlineLarge,
-                          ),
-                        ),
-                        AppSpacing.gapSm,
-                        Text(
-                          AppConstants.lockupTagline.toUpperCase(),
-                          style: context.text.labelSmall?.copyWith(
-                            color: context.palette.textMuted,
-                            letterSpacing: 2.6,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        AppSpacing.gapXl,
-                        Text(
-                          AppConstants.splashTagline,
-                          style: context.text.bodyLarge?.copyWith(
-                            color: context.palette.textMuted,
-                            height: 1.45,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
                         const Spacer(flex: 2),
                         const _SplashDots(count: 5, index: 0),
                       ],

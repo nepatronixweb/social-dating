@@ -14,8 +14,8 @@ abstract final class SettingsRules {
       'A profile-completion reminder can be set every 3–5 days.';
 
   static const String reportDisclosure =
-      'Submitting records a mock report on this device. It is not sent to '
-      'moderators.';
+      'Reports about a specific member are reviewed by staff. Open a profile '
+      'or chat to report someone.';
 
   static const String reportSubmittedTitle = 'Report saved';
 

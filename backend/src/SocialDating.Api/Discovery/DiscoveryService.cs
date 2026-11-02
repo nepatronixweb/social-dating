@@ -3,6 +3,7 @@ using SocialDating.Api.Auth;
 using SocialDating.Api.Data;
 using SocialDating.Api.Chat;
 using SocialDating.Api.Inbox;
+using SocialDating.Api.Ops;
 using SocialDating.Api.Photos;
 using SocialDating.Api.Wallet;
 
@@ -22,7 +23,12 @@ public interface IDiscoveryService
 
     Task<SwipeQuotaResponse> FetchQuotaAsync(Guid viewerId, CancellationToken ct);
     Task<SwipeOutcomeResponse> SwipeAsync(Guid viewerId, SwipeRequest body, CancellationToken ct);
-    Task<UndoOutcomeResponse?> UndoLastAsync(Guid viewerId, CancellationToken ct);
+    Task<UndoOutcomeResponse?> UndoLastAsync(Guid viewerId, UndoRequest body, CancellationToken ct);
+    Task<DiscoveryMessageResponse> MessageAsync(
+        Guid viewerId,
+        DiscoveryMessageRequest body,
+        CancellationToken ct
+    );
     Task<MatchListResponse> FetchMatchesAsync(Guid viewerId, CancellationToken ct);
     Task<LikeListResponse> FetchLikesReceivedAsync(Guid viewerId, CancellationToken ct);
     Task<LikeListResponse> FetchLikesSentAsync(Guid viewerId, CancellationToken ct);
@@ -41,6 +47,7 @@ public sealed class DiscoveryService(
     TimeProvider time,
     IWalletService wallet,
     PhotoService photos,
+    IAppConfigService? appConfig = null,
     IChatRealtime? realtime = null,
     IInboxService? inbox = null) : IDiscoveryService
 {
@@ -49,6 +56,7 @@ public sealed class DiscoveryService(
     public const int PreviewSwipes = 5;
     public const int FreeDailySwipesMale = 20;
     public const int ExtraSwipePricePaisa = 10;
+    public const int PremiumActionPricePaisa = WalletService.PremiumActionPricePoints;
 
     DateTimeOffset Now => time.GetUtcNow();
 
@@ -62,7 +70,13 @@ public sealed class DiscoveryService(
         CancellationToken ct
     )
     {
+        await EnsureDiscoveryOn(ct);
         var viewer = await RequireAccount(viewerId, ct);
+        if (viewer.ShadowBannedAt is not null)
+        {
+            return new DiscoveryPageResponse([]);
+        }
+
         var hidden = await HiddenIds(viewerId, ct);
         var swiped = (await db.Swipes
             .Where(s => s.FromAccountId == viewerId)
@@ -74,6 +88,9 @@ public sealed class DiscoveryService(
         var rows = await db.Accounts
             .Where(a =>
                 a.Id != viewerId
+                && a.PhoneE164 != AdminAccount.PhoneE164
+                && a.SuspendedAt == null
+                && a.ShadowBannedAt == null
                 && a.AgeEligible == true
                 && a.DisplayName != null
                 && a.BirthDate != null
@@ -134,12 +151,20 @@ public sealed class DiscoveryService(
         bool countTowardQuota
     )
     {
+        await EnsureDiscoveryOn(ct);
         var account = await RequireAccount(viewerId, ct);
+        if (account.ShadowBannedAt is not null)
+        {
+            var emptyQuota = await QuotaFor(account, ct);
+            return new SwipeOutcomeResponse(emptyQuota, null, 0, null);
+        }
+
         var quota = await QuotaFor(account, ct);
         var direction = (body.Direction ?? "").Trim().ToLowerInvariant();
-        if (direction is not ("left" or "right"))
+        var isSuper = direction == "super";
+        if (direction is not ("left" or "right" or "super"))
         {
-            throw new AuthException(400, "Check your details.", "Swipe left or right.");
+            throw new AuthException(400, "Check your details.", "Swipe left, right, or super.");
         }
 
         if (!Guid.TryParse(body.ProfileId, out var toId) || toId == viewerId)
@@ -152,8 +177,22 @@ public sealed class DiscoveryService(
             return new SwipeOutcomeResponse(quota, null, 0, null);
         }
 
-        var paidExtra = countTowardQuota && NeedsPaid(quota);
-        if (countTowardQuota)
+        var mustPayAction = MustPayPremiumActions(account);
+        if (isSuper)
+        {
+            if (mustPayAction)
+            {
+                if (quota.BalancePaisa < quota.ActionPricePaisa)
+                {
+                    return new SwipeOutcomeResponse(quota, null, 0, "insufficientFunds");
+                }
+                if (!body.ConfirmedPaid)
+                {
+                    return new SwipeOutcomeResponse(quota, null, 0, "paymentRequired");
+                }
+            }
+        }
+        else if (countTowardQuota)
         {
             var rejection = Reject(quota, body.ConfirmedPaid);
             if (rejection is not null)
@@ -172,13 +211,19 @@ public sealed class DiscoveryService(
         }
 
         var target = await db.Accounts.FirstOrDefaultAsync(a => a.Id == toId, ct);
+        if (target is not null && AdminAccount.IsAdmin(target))
+        {
+            return new SwipeOutcomeResponse(quota, null, 0, null);
+        }
+
         var publicTarget = await PublicOf(target, ct);
         if (publicTarget is null)
         {
             return new SwipeOutcomeResponse(quota, null, 0, null);
         }
 
-        if (countTowardQuota)
+        // Super likes are a separate paid action and do not consume free swipe quota.
+        if (countTowardQuota && !isSuper)
         {
             var day = await DayFor(viewerId, quota.DayKey, ct);
             if (quota.ProfileComplete) day.DailyUsed++;
@@ -196,45 +241,48 @@ public sealed class DiscoveryService(
         db.Swipes.Add(swipe);
 
         PublicProfileResponse? matched = null;
-        if (direction == "right")
+        var countsAsLike = direction is "right" or "super";
+        if (countsAsLike)
         {
             var otherLiked = (await db.Swipes
                 .Where(s => s.FromAccountId == toId && s.ToAccountId == viewerId)
                 .ToListAsync(ct))
-                .Any(s => s.UndoneAt == null && s.Direction == "right");
+                .Any(s => s.UndoneAt == null && IsLikeDirection(s.Direction));
             if (otherLiked)
             {
-                var pair = Pair(viewerId, toId);
-                var open = (await db.Matches
-                    .Where(m => m.AccountLowId == pair.Low && m.AccountHighId == pair.High)
-                    .ToListAsync(ct))
-                    .FirstOrDefault(m => m.UnmatchedAt == null);
-                if (open is null)
-                {
-                    open = new MatchPair
-                    {
-                        Id = Guid.NewGuid(),
-                        AccountLowId = pair.Low,
-                        AccountHighId = pair.High,
-                        CreatedAt = Now,
-                    };
-                    db.Matches.Add(open);
-                }
-
+                var open = await EnsureOpenMatch(viewerId, toId, ct);
                 swipe.MatchId = open.Id;
                 matched = publicTarget;
             }
         }
 
         var charged = 0;
-        if (paidExtra)
+        if (isSuper && mustPayAction)
+        {
+            var charge = await wallet.ChargeToAdminAsync(
+                account,
+                quota.ActionPricePaisa,
+                "superLikeSpend",
+                "Super like",
+                $"{quota.ActionPricePaisa} points for a super like. Credited to the admin account.",
+                swipe.Id.ToString(),
+                ct
+            );
+            if (!charge.Ok)
+            {
+                return new SwipeOutcomeResponse(await QuotaFor(account, ct), null, 0, "insufficientFunds");
+            }
+
+            charged = charge.ChargedPaisa;
+        }
+        else if (!isSuper && countTowardQuota && NeedsPaid(quota))
         {
             var charge = await wallet.TryChargeAsync(
                 account,
-                ExtraSwipePricePaisa,
+                quota.PricePaisa,
                 "swipeSpend",
                 "Paid swipe",
-                "NPR 0.10 charged as 10 points for an extra swipe.",
+                $"{quota.PricePaisa} points for an extra swipe.",
                 swipe.Id.ToString(),
                 ct
             );
@@ -247,7 +295,7 @@ public sealed class DiscoveryService(
         }
 
         await db.SaveChangesAsync(ct);
-        if (direction == "right" && target is not null)
+        if (countsAsLike && target is not null)
         {
             try
             {
@@ -262,12 +310,24 @@ public sealed class DiscoveryService(
             }
         }
 
-        return new SwipeOutcomeResponse(await QuotaFor(account, ct), matched, charged, null);
+        return new SwipeOutcomeResponse(
+            await QuotaFor(account, ct),
+            matched,
+            charged,
+            null,
+            swipe.MatchId?.ToString()
+        );
     }
 
-    public async Task<UndoOutcomeResponse?> UndoLastAsync(Guid viewerId, CancellationToken ct)
+    public async Task<UndoOutcomeResponse?> UndoLastAsync(
+        Guid viewerId,
+        UndoRequest body,
+        CancellationToken ct
+    )
     {
+        await EnsureDiscoveryOn(ct);
         var account = await RequireAccount(viewerId, ct);
+        var quota = await QuotaFor(account, ct);
         var last = (await db.Swipes
             .Where(s => s.FromAccountId == viewerId)
             .ToListAsync(ct))
@@ -277,8 +337,47 @@ public sealed class DiscoveryService(
             .FirstOrDefault();
         if (last is null) return null;
 
+        var mustPay = MustPayPremiumActions(account);
+        if (mustPay)
+        {
+            if (quota.BalancePaisa < quota.ActionPricePaisa)
+            {
+                return new UndoOutcomeResponse(null, quota, 0, "insufficientFunds");
+            }
+            if (!body.ConfirmedPaid)
+            {
+                return new UndoOutcomeResponse(null, quota, 0, "paymentRequired");
+            }
+        }
+
+        var charged = 0;
+        if (mustPay)
+        {
+            var charge = await wallet.ChargeToAdminAsync(
+                account,
+                quota.ActionPricePaisa,
+                "rewindSpend",
+                "Rewind",
+                $"{quota.ActionPricePaisa} points to undo the last swipe. Credited to the admin account.",
+                last.Id.ToString("D") + ":rewind",
+                ct
+            );
+            if (!charge.Ok)
+            {
+                return new UndoOutcomeResponse(
+                    null,
+                    await QuotaFor(account, ct),
+                    0,
+                    "insufficientFunds"
+                );
+            }
+
+            charged = charge.ChargedPaisa;
+        }
+
         last.UndoneAt = Now;
         await wallet.RefundAsync(viewerId, last.Id.ToString(), ct);
+
         if (last.MatchId is Guid matchId)
         {
             var match = await db.Matches.FirstOrDefaultAsync(m => m.Id == matchId, ct);
@@ -291,7 +390,7 @@ public sealed class DiscoveryService(
         var dayKey = NepalTime.DayKey(last.CreatedAt);
         var today = NepalTime.DayKey(Now);
         var day = await db.SwipeDays.FindAsync([viewerId, dayKey], ct);
-        if (day is not null)
+        if (day is not null && last.Direction is not "super")
         {
             var complete = IsComplete(account);
             if (!complete) day.PreviewUsed = Math.Max(0, day.PreviewUsed - 1);
@@ -302,12 +401,128 @@ public sealed class DiscoveryService(
         var target = await db.Accounts.FirstOrDefaultAsync(a => a.Id == last.ToAccountId, ct);
         var profile = await PublicOf(target, ct);
         if (profile is null) return null;
-        return new UndoOutcomeResponse(profile, await QuotaFor(account, ct));
+        return new UndoOutcomeResponse(profile, await QuotaFor(account, ct), charged);
+    }
+
+    public async Task<DiscoveryMessageResponse> MessageAsync(
+        Guid viewerId,
+        DiscoveryMessageRequest body,
+        CancellationToken ct
+    )
+    {
+        await EnsureDiscoveryOn(ct);
+        var account = await RequireAccount(viewerId, ct);
+        if (account.ShadowBannedAt is not null)
+        {
+            var blockedQuota = await QuotaFor(account, ct);
+            return new DiscoveryMessageResponse(blockedQuota, null, 0, null);
+        }
+
+        var quota = await QuotaFor(account, ct);
+        if (!Guid.TryParse(body.ProfileId, out var toId) || toId == viewerId)
+        {
+            return new DiscoveryMessageResponse(quota, null, 0, null);
+        }
+
+        if (await IsHidden(viewerId, toId, ct))
+        {
+            return new DiscoveryMessageResponse(quota, null, 0, null);
+        }
+
+        var target = await db.Accounts.FirstOrDefaultAsync(a => a.Id == toId, ct);
+        if (target is null || AdminAccount.IsAdmin(target))
+        {
+            return new DiscoveryMessageResponse(quota, null, 0, null);
+        }
+
+        var publicTarget = await PublicOf(target, ct);
+        if (publicTarget is null)
+        {
+            return new DiscoveryMessageResponse(quota, null, 0, null);
+        }
+
+        var mustPay = MustPayPremiumActions(account);
+        if (mustPay)
+        {
+            if (quota.BalancePaisa < quota.ActionPricePaisa)
+            {
+                return new DiscoveryMessageResponse(quota, null, 0, "insufficientFunds");
+            }
+            if (!body.ConfirmedPaid)
+            {
+                return new DiscoveryMessageResponse(quota, null, 0, "paymentRequired");
+            }
+        }
+
+        var open = await EnsureOpenMatch(viewerId, toId, ct);
+        var charged = 0;
+        if (mustPay)
+        {
+            var charge = await wallet.ChargeToAdminAsync(
+                account,
+                quota.ActionPricePaisa,
+                "discoveryMessageSpend",
+                "Direct message",
+                $"{quota.ActionPricePaisa} points to message before a match. Credited to the admin account.",
+                open.Id.ToString("D") + ":dm:" + viewerId.ToString("D"),
+                ct
+            );
+            if (!charge.Ok)
+            {
+                return new DiscoveryMessageResponse(
+                    await QuotaFor(account, ct),
+                    null,
+                    0,
+                    "insufficientFunds"
+                );
+            }
+
+            charged = charge.ChargedPaisa;
+        }
+
+        // Ensure a right/super swipe exists so likes lists stay consistent.
+        var existing = (await db.Swipes
+            .Where(s => s.FromAccountId == viewerId && s.ToAccountId == toId)
+            .ToListAsync(ct))
+            .FirstOrDefault(s => s.UndoneAt == null);
+        if (existing is null)
+        {
+            db.Swipes.Add(new Swipe
+            {
+                Id = Guid.NewGuid(),
+                FromAccountId = viewerId,
+                ToAccountId = toId,
+                Direction = "right",
+                MatchId = open.Id,
+                CreatedAt = Now,
+            });
+        }
+        else if (existing.MatchId is null)
+        {
+            existing.MatchId = open.Id;
+        }
+
+        await db.SaveChangesAsync(ct);
+        try
+        {
+            await _inbox.NotifyMatchAsync(account, target, open.Id, ct);
+        }
+        catch
+        {
+            // Inbox must not fail a paid message open.
+        }
+
+        return new DiscoveryMessageResponse(
+            await QuotaFor(account, ct),
+            open.Id.ToString(),
+            charged,
+            null
+        );
     }
 
     public async Task<MatchListResponse> FetchMatchesAsync(Guid viewerId, CancellationToken ct)
     {
-        await RequireAccount(viewerId, ct);
+        var viewer = await RequireAccount(viewerId, ct);
         var hidden = await HiddenIds(viewerId, ct);
         var rows = (await db.Matches
             .Where(m => m.AccountLowId == viewerId || m.AccountHighId == viewerId)
@@ -322,7 +537,7 @@ public sealed class DiscoveryService(
             var otherId = match.AccountLowId == viewerId ? match.AccountHighId : match.AccountLowId;
             if (hidden.Contains(otherId)) continue;
             var other = await db.Accounts.FirstOrDefaultAsync(a => a.Id == otherId, ct);
-            var profile = await PublicOf(other, ct);
+            var profile = await PublicOf(viewer, other, ct);
             if (profile is null) continue;
             var isNew = match.AccountLowId == viewerId ? !match.SeenByLow : !match.SeenByHigh;
             items.Add(new MatchResponse(match.Id.ToString(), profile, match.CreatedAt, isNew, null, match.Id.ToString()));
@@ -348,7 +563,7 @@ public sealed class DiscoveryService(
             .ToListAsync(ct))
             .Where(s =>
                 s.UndoneAt == null
-                && s.Direction == "right"
+                && IsLikeDirection(s.Direction)
                 && !hidden.Contains(s.FromAccountId)
                 && !paired.Contains(s.FromAccountId)
                 && !answered.Contains(s.FromAccountId))
@@ -369,7 +584,7 @@ public sealed class DiscoveryService(
             .ToListAsync(ct))
             .Where(s =>
                 s.UndoneAt == null
-                && s.Direction == "right"
+                && IsLikeDirection(s.Direction)
                 && !hidden.Contains(s.ToAccountId)
                 && !paired.Contains(s.ToAccountId))
             .OrderByDescending(s => s.CreatedAt)
@@ -569,10 +784,42 @@ public sealed class DiscoveryService(
         return new DiscoveryPageResponse(items);
     }
 
-    async Task<PublicProfileResponse?> PublicOf(Account? account, CancellationToken ct)
+    async Task<PublicProfileResponse?> PublicOf(Account? account, CancellationToken ct) =>
+        await PublicOf(viewer: null, account, ct);
+
+    async Task<PublicProfileResponse?> PublicOf(Account? viewer, Account? account, CancellationToken ct)
     {
         if (account is null) return null;
-        return ProfileMapper.ToPublic(account, Now, await photos.UrlsFor(account.Id, ct));
+        int? spendable = null;
+        if (viewer is not null
+            && ProfileRules.CanWithdraw(viewer.Gender)
+            && ProfileRules.IsMale(account.Gender))
+        {
+            await wallet.EnsureWelcomeAsync(account, ct);
+            await wallet.EnsureDailyFreePointsAsync(account, ct);
+            spendable = await wallet.SpendableAsync(account.Id, ct);
+        }
+
+        return ProfileMapper.ToPublic(
+            account,
+            Now,
+            await photos.UrlsFor(account.Id, ct),
+            spendable
+        );
+    }
+
+    async Task EnsureDiscoveryOn(CancellationToken ct)
+    {
+        if (appConfig is null) return;
+        var cfg = await appConfig.GetAsync(ct);
+        if (cfg.KillDiscovery)
+        {
+            throw new AuthException(
+                503,
+                "Discovery paused.",
+                "Discovery is temporarily unavailable. Try again later."
+            );
+        }
     }
 
     async Task<Account> RequireAccount(Guid accountId, CancellationToken ct)
@@ -589,23 +836,60 @@ public sealed class DiscoveryService(
     async Task<SwipeQuotaResponse> QuotaFor(Account account, CancellationToken ct)
     {
         await wallet.EnsureWelcomeAsync(account, ct);
+        await wallet.EnsureDailyFreePointsAsync(account, ct);
         var dayKey = NepalTime.DayKey(Now);
         var day = await DayFor(account.Id, dayKey, ct);
         var complete = IsComplete(account);
-        int? limit = ProfileRules.NeedsPaidSubscription(account.Gender)
-            ? FreeDailySwipesMale
-            : null;
+        var freeSwipes = FreeDailySwipesMale;
+        var extraSwipe = ExtraSwipePricePaisa;
+        var actionPrice = PremiumActionPricePaisa;
+        if (appConfig is not null)
+        {
+            var cfg = await appConfig.GetAsync(ct);
+            freeSwipes = cfg.FreeDailySwipesMale;
+            extraSwipe = cfg.ExtraSwipePoints;
+            actionPrice = cfg.PremiumActionPoints;
+        }
+
+        int? limit = ProfileRules.NeedsPaidSubscription(account) ? freeSwipes : null;
         return new SwipeQuotaResponse(
             complete,
             day.PreviewUsed,
             day.DailyUsed,
             limit,
             await wallet.SpendableAsync(account.Id, ct),
-            ExtraSwipePricePaisa,
+            extraSwipe,
+            actionPrice,
             dayKey,
             NepalTime.NextMidnightUtc(Now)
         );
     }
+
+    async Task<MatchPair> EnsureOpenMatch(Guid a, Guid b, CancellationToken ct)
+    {
+        var pair = Pair(a, b);
+        var open = (await db.Matches
+            .Where(m => m.AccountLowId == pair.Low && m.AccountHighId == pair.High)
+            .ToListAsync(ct))
+            .FirstOrDefault(m => m.UnmatchedAt == null);
+        if (open is not null) return open;
+
+        open = new MatchPair
+        {
+            Id = Guid.NewGuid(),
+            AccountLowId = pair.Low,
+            AccountHighId = pair.High,
+            CreatedAt = Now,
+        };
+        db.Matches.Add(open);
+        return open;
+    }
+
+    static bool MustPayPremiumActions(Account account) =>
+        ProfileRules.NeedsPaidSubscription(account);
+
+    static bool IsLikeDirection(string? direction) =>
+        direction is "right" or "super";
 
     async Task<SwipeDay> DayFor(Guid accountId, string dayKey, CancellationToken ct)
     {
@@ -697,7 +981,7 @@ public sealed class DiscoveryService(
         (await db.Swipes
             .Where(s => s.FromAccountId == fromId && s.ToAccountId == toId)
             .ToListAsync(ct))
-            .Any(s => s.UndoneAt == null && s.Direction == "right");
+            .Any(s => s.UndoneAt == null && IsLikeDirection(s.Direction));
 
     async Task<List<LikeItemResponse>> ToLikeItems(List<Swipe> swipes, bool fromThem, CancellationToken ct)
     {

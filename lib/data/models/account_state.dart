@@ -12,6 +12,7 @@ class AccountState {
     this.isAgeEligible,
     this.displayName,
     this.gender,
+    this.restrictionStatus,
   });
 
   final String id;
@@ -24,19 +25,27 @@ class AccountState {
   /// Wire name: male, female, lgbtq, other.
   final String? gender;
 
+  /// `null` when unrestricted; else suspended, shadowBanned, or banned.
+  final String? restrictionStatus;
+
   bool get hasBirthDate => isAgeEligible != null;
+
+  bool get isRestricted =>
+      restrictionStatus != null && restrictionStatus!.isNotEmpty;
 
   AccountState copyWith({
     bool? termsAccepted,
     bool? isAgeEligible,
     String? displayName,
     String? gender,
+    String? restrictionStatus,
   }) => AccountState(
     id: id,
     termsAccepted: termsAccepted ?? this.termsAccepted,
     isAgeEligible: isAgeEligible ?? this.isAgeEligible,
     displayName: displayName ?? this.displayName,
     gender: gender ?? this.gender,
+    restrictionStatus: restrictionStatus ?? this.restrictionStatus,
   );
 
   Map<String, Object?> toJson() => {
@@ -45,6 +54,7 @@ class AccountState {
     'isAgeEligible': isAgeEligible,
     'displayName': displayName,
     'gender': gender,
+    'restrictionStatus': restrictionStatus,
   };
 
   static AccountState? fromJson(Object? json) {
@@ -61,6 +71,9 @@ class AccountState {
           ? json['displayName'] as String
           : null,
       gender: json['gender'] is String ? json['gender'] as String : null,
+      restrictionStatus: json['restrictionStatus'] is String
+          ? json['restrictionStatus'] as String
+          : null,
     );
   }
 
@@ -71,9 +84,16 @@ class AccountState {
       other.termsAccepted == termsAccepted &&
       other.isAgeEligible == isAgeEligible &&
       other.displayName == displayName &&
-      other.gender == gender;
+      other.gender == gender &&
+      other.restrictionStatus == restrictionStatus;
 
   @override
-  int get hashCode =>
-      Object.hash(id, termsAccepted, isAgeEligible, displayName, gender);
+  int get hashCode => Object.hash(
+    id,
+    termsAccepted,
+    isAgeEligible,
+    displayName,
+    gender,
+    restrictionStatus,
+  );
 }

@@ -176,7 +176,7 @@ class ProfileCard extends StatelessWidget {
               AppSpacing.xl,
               AppSpacing.xxxl,
               AppSpacing.xl,
-              bottomInset + AppSpacing.lg,
+              bottomInset + AppSpacing.sm,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,

@@ -13,6 +13,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/clock_provider.dart';
 import '../../../core/utils/media_url.dart';
 import '../../../core/utils/connectivity_provider.dart';
+import '../../../core/utils/money.dart';
 import '../../../core/utils/responsive.dart';
 import '../../../core/utils/theme_context.dart';
 import '../../../core/theme/app_radii.dart';
@@ -30,8 +31,10 @@ import '../../../core/widgets/skeleton_layouts.dart';
 import '../../../core/widgets/typing_indicator.dart';
 import '../../../data/models/chat.dart';
 import '../../../data/models/match.dart';
+import '../../../data/models/profile.dart';
 import '../../../data/repositories/repository_contracts.dart';
 import '../../../data/repositories/repository_providers.dart';
+import '../../auth/providers/session_provider.dart';
 import '../../matches/presentation/match_dialogs.dart';
 import '../../matches/providers/matches_providers.dart';
 import '../../wallet/providers/wallet_providers.dart';
@@ -39,7 +42,6 @@ import '../providers/chat_providers.dart';
 import 'widgets/chat_composer.dart';
 import 'widgets/conversation_menu.dart';
 import 'widgets/insufficient_message_balance_dialog.dart';
-import 'widgets/paid_message_dialog.dart';
 
 /// A conversation. It exists only while its match does: unmatching or
 /// blocking closes it. Word-fee previews are not charges; paid sends stay
@@ -175,16 +177,7 @@ class _ChatConversationScreenState
           if (openWallet && mounted) context.push(AppRoutes.wallet);
           return;
         }
-        final confirmed = await showPaidMessageDialog(
-          context,
-          quote: quote,
-          balancePaisa: repo.mockBalancePaisa,
-        );
-        if (!mounted) return;
-        if (!confirmed) {
-          setState(() => _sending = false);
-          return;
-        }
+        // Word fee is deducted on send without a confirmation sheet.
       }
     }
 
@@ -252,19 +245,11 @@ class _ChatConversationScreenState
         final quote = outcome.quote;
         if (quote == null || !quote.isPaid) {
           setState(
-            () =>
-                _sendError = 'Confirm the word fee to send this message.',
+            () => _sendError = 'Could not send this paid message.',
           );
           return;
         }
-        final confirmed = await showPaidMessageDialog(
-          context,
-          quote: quote,
-          balancePaisa: outcome.balancePaisa,
-        );
-        if (confirmed && mounted) {
-          await _send(confirmedPaid: true);
-        }
+        if (mounted) await _send(confirmedPaid: true);
       case MessageRejection.tooLong:
         setState(
           () => _sendError =
@@ -397,7 +382,12 @@ class _ChatConversationScreenState
         showAppSnackBar(context, 'Conversation hidden.');
         context.go(AppRoutes.chat);
       case ConversationMenuAction.report:
-        context.push(AppRoutes.reportUser(name: match?.profile.displayName));
+        context.push(
+          AppRoutes.reportUser(
+            name: match?.profile.displayName,
+            accountId: match?.profile.id,
+          ),
+        );
       case ConversationMenuAction.unmatch:
         if (match == null) return;
         if (!await confirmUnmatch(context, match.profile) || !mounted) return;
@@ -460,6 +450,13 @@ class _ChatConversationScreenState
     final typing = liveTyping || (preview?.isTyping ?? false);
     final offline = ref.watch(isOfflineProvider);
     final quote = ref.read(chatRepositoryProvider).quote(_controller.text);
+    final viewerGender = ref.watch(sessionProvider.select((s) => s.gender));
+    final peerPoints = profile?.spendablePoints;
+    final showPeerPoints =
+        viewerGender != null &&
+        viewerGender.canWithdrawAndSetDailyPreference &&
+        profile?.gender == ProfileGender.male &&
+        peerPoints != null;
 
     final error = messages.error;
     final failure = error is NotFoundFailure ? error : null;
@@ -474,6 +471,9 @@ class _ChatConversationScreenState
             : _HeaderTitle(
                 name: title,
                 image: profileImageProvider(photos.firstOrNull),
+                pointsLabel: showPeerPoints
+                    ? formatPointsDecimal(peerPoints)
+                    : null,
                 onTap: match == null
                     ? null
                     : () => context.push(AppRoutes.matchDetail(match.id)),
@@ -587,17 +587,26 @@ class _ChatConversationScreenState
 }
 
 class _HeaderTitle extends StatelessWidget {
-  const _HeaderTitle({required this.name, this.image, this.onTap});
+  const _HeaderTitle({
+    required this.name,
+    this.image,
+    this.pointsLabel,
+    this.onTap,
+  });
 
   final String name;
   final ImageProvider? image;
+  final String? pointsLabel;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final points = pointsLabel;
     return Semantics(
       button: onTap != null,
-      label: 'Open profile for $name',
+      label: points == null
+          ? 'Open profile for $name'
+          : 'Open profile for $name, $points',
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppSizes.avatarXs),
@@ -606,11 +615,26 @@ class _HeaderTitle extends StatelessWidget {
             ProfileAvatar(name: name, image: image, size: AppSizes.avatarXs),
             AppSpacing.gapSm,
             Flexible(
-              child: Text(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: context.text.titleMedium,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.text.titleMedium,
+                  ),
+                  if (points != null)
+                    Text(
+                      points,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.text.labelSmall?.copyWith(
+                        color: context.palette.textMuted,
+                      ),
+                    ),
+                ],
               ),
             ),
           ],

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SocialDating.Api.Auth;
 using SocialDating.Api.Data;
+using SocialDating.Api.Ops;
 
 namespace SocialDating.Api.Wallet;
 
@@ -19,6 +20,7 @@ public interface IWalletService
     );
     Task<WithdrawalRequestResponse> CancelWithdrawalAsync(Guid accountId, Guid id, CancellationToken ct);
     Task EnsureWelcomeAsync(Account account, CancellationToken ct);
+    Task EnsureDailyFreePointsAsync(Account account, CancellationToken ct);
     Task CreditEarnedAsync(
         Guid accountId,
         int points,
@@ -38,14 +40,28 @@ public interface IWalletService
         string sourceId,
         CancellationToken ct
     );
+    /// <summary>Debits the payer and credits the admin ledger for the same amount.</summary>
+    Task<ChargeResult> ChargeToAdminAsync(
+        Account account,
+        int costPaisa,
+        string kind,
+        string title,
+        string detail,
+        string sourceId,
+        CancellationToken ct
+    );
     Task RefundAsync(Guid accountId, string sourceId, CancellationToken ct);
 }
 
 public readonly record struct ChargeResult(bool Ok, int ChargedPaisa, int BalancePaisa);
 
-public sealed class WalletService(AppDbContext db, TimeProvider time) : IWalletService
+public sealed class WalletService(AppDbContext db, TimeProvider time, IAppConfigService? appConfig = null)
+    : IWalletService
 {
     public const int WelcomeBonusPoints = 1000;
+    /// <summary>Daily promotional grant for males without a paid subscription.</summary>
+    public const int DailyFreePointsMale = 100;
+    public const int PremiumActionPricePoints = 100;
     public const int MinWithdrawalPoints = 500;
     public const int WithdrawalFeePoints = 0;
 
@@ -55,6 +71,7 @@ public sealed class WalletService(AppDbContext db, TimeProvider time) : IWalletS
     {
         var account = await RequireAccount(accountId, ct);
         await EnsureWelcomeAsync(account, ct);
+        await EnsureDailyFreePointsAsync(account, ct);
         await db.SaveChangesAsync(ct);
         var (promo, earned) = await BalancesAsync(accountId, ct);
         var pending = await PendingPointsAsync(accountId, ct);
@@ -149,6 +166,19 @@ public sealed class WalletService(AppDbContext db, TimeProvider time) : IWalletS
     {
         var account = await RequireAccount(accountId, ct);
         await EnsureWelcomeAsync(account, ct);
+        if (appConfig is not null)
+        {
+            var cfg = await appConfig.GetAsync(ct);
+            if (cfg.KillWithdrawals)
+            {
+                throw new AuthException(
+                    503,
+                    "Withdrawals paused.",
+                    "Withdrawals are temporarily unavailable."
+                );
+            }
+        }
+
         if (!body.Confirmed)
         {
             throw new AuthException(
@@ -164,12 +194,13 @@ public sealed class WalletService(AppDbContext db, TimeProvider time) : IWalletS
             throw new AuthException(400, "Not available.", eligibility.Explanation);
         }
 
-        if (body.Points < MinWithdrawalPoints)
+        var minPoints = eligibility.MinimumPoints;
+        if (body.Points < minPoints)
         {
             throw new AuthException(
                 400,
                 "Below the minimum.",
-                $"The configured minimum is {MinWithdrawalPoints} earned points. Promotional points do not count."
+                $"The configured minimum is {minPoints} earned points. Promotional points do not count."
             );
         }
 
@@ -260,6 +291,7 @@ public sealed class WalletService(AppDbContext db, TimeProvider time) : IWalletS
 
     public async Task EnsureWelcomeAsync(Account account, CancellationToken ct)
     {
+        if (AdminAccount.IsAdmin(account)) return;
         if (account.DisplayName is null || account.City is null || account.Gender is null)
         {
             return;
@@ -283,6 +315,81 @@ public sealed class WalletService(AppDbContext db, TimeProvider time) : IWalletS
             OccurredAt = Now,
             SourceId = "welcome",
         });
+    }
+
+    public async Task EnsureDailyFreePointsAsync(Account account, CancellationToken ct)
+    {
+        if (AdminAccount.IsAdmin(account)) return;
+        if (!ProfileRules.NeedsPaidSubscription(account)) return;
+        if (account.DisplayName is null || account.City is null || account.Gender is null) return;
+
+        var dayKey = Discovery.NepalTime.DayKey(Now);
+        var sourceId = $"dailyFree:{dayKey}";
+        var exists = await db.WalletEntries.AnyAsync(
+            e => e.AccountId == account.Id && e.SourceId == sourceId,
+            ct
+        ) || db.WalletEntries.Local.Any(e => e.AccountId == account.Id && e.SourceId == sourceId);
+        if (exists) return;
+
+        var points = DailyFreePointsMale;
+        if (appConfig is not null)
+        {
+            var cfg = await appConfig.GetAsync(ct);
+            points = cfg.DailyFreePointsMale;
+        }
+
+        db.WalletEntries.Add(new WalletEntry
+        {
+            Id = Guid.NewGuid(),
+            AccountId = account.Id,
+            Points = points,
+            Bucket = "promotional",
+            Kind = "dailyFreePoints",
+            Title = "Daily free points",
+            Detail =
+                $"{points} promotional points for today. Resets each Nepal calendar day. Not cash and not withdrawable.",
+            OccurredAt = Now,
+            SourceId = sourceId,
+        });
+    }
+
+    public async Task<ChargeResult> ChargeToAdminAsync(
+        Account account,
+        int costPaisa,
+        string kind,
+        string title,
+        string detail,
+        string sourceId,
+        CancellationToken ct
+    )
+    {
+        if (appConfig is not null)
+        {
+            var cfg = await appConfig.GetAsync(ct);
+            if (cfg.KillPremiumCharges)
+            {
+                throw new AuthException(
+                    503,
+                    "Premium paused.",
+                    "Paid premium actions are temporarily unavailable."
+                );
+            }
+        }
+
+        var charge = await TryChargeAsync(account, costPaisa, kind, title, detail, sourceId, ct);
+        if (!charge.Ok || charge.ChargedPaisa <= 0) return charge;
+
+        var admin = await AdminAccount.EnsureAsync(db, Now, ct);
+        await CreditEarnedAsync(
+            admin.Id,
+            charge.ChargedPaisa,
+            "adminReceive",
+            title,
+            detail,
+            sourceId + ":admin",
+            ct
+        );
+        return charge;
     }
 
     public async Task CreditEarnedAsync(
@@ -333,6 +440,7 @@ public sealed class WalletService(AppDbContext db, TimeProvider time) : IWalletS
     )
     {
         await EnsureWelcomeAsync(account, ct);
+        await EnsureDailyFreePointsAsync(account, ct);
         if (costPaisa <= 0)
         {
             return new ChargeResult(true, 0, await SpendableAsync(account.Id, ct));
@@ -384,10 +492,40 @@ public sealed class WalletService(AppDbContext db, TimeProvider time) : IWalletS
                 Points = -debit.Points,
                 Bucket = debit.Bucket,
                 Kind = "other",
-                Title = "Paid swipe refunded",
-                Detail = "The extra swipe was undone. These points were returned.",
+                Title = "Paid action refunded",
+                Detail = "Staff or system returned these points.",
                 OccurredAt = Now,
                 SourceId = refundKey,
+            });
+        }
+
+        // Claw back the matching adminReceive credit when this was ChargeToAdmin.
+        var adminSource = sourceId + ":admin";
+        var adminRefundKey = adminSource + ":refund";
+        var adminAlready = await db.WalletEntries.AnyAsync(
+            e => e.SourceId == adminRefundKey,
+            ct
+        );
+        if (adminAlready) return;
+
+        var adminCredits = (await db.WalletEntries
+            .Where(e => e.SourceId == adminSource)
+            .ToListAsync(ct))
+            .Where(e => e.Points > 0)
+            .ToList();
+        foreach (var credit in adminCredits)
+        {
+            db.WalletEntries.Add(new WalletEntry
+            {
+                Id = Guid.NewGuid(),
+                AccountId = credit.AccountId,
+                Points = -credit.Points,
+                Bucket = credit.Bucket,
+                Kind = "other",
+                Title = "Admin credit reversed",
+                Detail = "Matching refund of a premium charge.",
+                OccurredAt = Now,
+                SourceId = adminRefundKey,
             });
         }
     }
@@ -395,21 +533,33 @@ public sealed class WalletService(AppDbContext db, TimeProvider time) : IWalletS
     async Task<WithdrawalEligibilityResponse> EligibilityFor(Account account, CancellationToken ct)
     {
         var (_, earned) = await BalancesAsync(account.Id, ct);
+        var minPoints = MinWithdrawalPoints;
+        var withdrawalsKilled = false;
+        if (appConfig is not null)
+        {
+            var cfg = await appConfig.GetAsync(ct);
+            minPoints = cfg.MinWithdrawalPoints;
+            withdrawalsKilled = cfg.KillWithdrawals;
+        }
+
         var eligibleAccount = ProfileRules.CanWithdraw(account.Gender);
-        var belowMinimum = earned < MinWithdrawalPoints;
+        var belowMinimum = earned < minPoints;
         var hasOpen = await HasOpenRequest(account.Id, ct);
-        var canSubmit = eligibleAccount && !belowMinimum && !hasOpen && earned > 0;
-        var explanation = !eligibleAccount
-            ? "Withdrawals are only available to female, LGBTQ+ and other accounts. Promotional points never count."
-            : belowMinimum
-                ? $"You need at least {MinWithdrawalPoints} earned, withdrawable points. You have {earned} earned points. Promotional points never count toward this threshold."
-                : hasOpen
-                    ? "A withdrawal request is already recorded. Cancel it before recording another. Nothing has been sent to a bank."
-                    : "You can record a withdrawal of earned points. Promotional points are excluded. A displayed equivalent is not cash. Payouts are not enabled.";
+        var canSubmit =
+            eligibleAccount && !belowMinimum && !hasOpen && earned > 0 && !withdrawalsKilled;
+        var explanation = withdrawalsKilled
+            ? "Withdrawals are temporarily unavailable."
+            : !eligibleAccount
+                ? "Withdrawals are only available to female, LGBTQ+ and other accounts. Promotional points never count."
+                : belowMinimum
+                    ? $"You need at least {minPoints} earned, withdrawable points. You have {earned} earned points. Promotional points never count toward this threshold."
+                    : hasOpen
+                        ? "A withdrawal request is already recorded. Cancel it before recording another. Nothing has been sent to a bank."
+                        : "You can record a withdrawal of earned points. Promotional points are excluded. A displayed equivalent is not cash. Payouts are not enabled.";
         return new WithdrawalEligibilityResponse(
             eligibleAccount,
             earned,
-            MinWithdrawalPoints,
+            minPoints,
             WithdrawalFeePoints,
             canSubmit,
             explanation,

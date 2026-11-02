@@ -11,6 +11,7 @@ class SafetyReport {
     this.details = '',
     this.attachmentAsset,
     this.subjectName,
+    this.reportedAccountId,
   });
 
   final String id;
@@ -23,4 +24,7 @@ class SafetyReport {
 
   /// Public display name only; never a phone number or exact location.
   final String? subjectName;
+
+  /// Target account id when reporting a specific member.
+  final String? reportedAccountId;
 }

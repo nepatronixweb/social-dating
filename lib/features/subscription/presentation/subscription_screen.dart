@@ -172,15 +172,6 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
                         ],
-                        helper: _amountOk
-                            ? 'Whole rupees. Minimum '
-                                  '${formatNpr(SubscriptionRules.minPricePaisa)}. '
-                                  'You will get '
-                                  '${formatPoints(SubscriptionRules.buyerPointsFor(_paisa!))} '
-                                  '(stated '
-                                  '${formatNpr(SubscriptionRules.buyerPointsFor(_paisa!))}).'
-                            : 'Whole rupees. Minimum '
-                                  '${formatNpr(SubscriptionRules.minPricePaisa)}.',
                         errorText: _amount.text.isEmpty
                             ? 'Enter how much you want to pay.'
                             : (_amountOk

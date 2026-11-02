@@ -215,7 +215,10 @@ class _MatchDetailScreenState extends ConsumerState<MatchDetailScreen> {
                   footer: _ManageSection(
                     enabled: !_busy,
                     onReport: () => context.push(
-                      AppRoutes.reportUser(name: current.profile.displayName),
+                      AppRoutes.reportUser(
+                        name: current.profile.displayName,
+                        accountId: current.profile.id,
+                      ),
                     ),
                     onUnmatch: () => _unmatch(current),
                     onBlock: () => _block(current),

@@ -5,8 +5,10 @@ import 'package:social_dating/core/utils/money.dart';
 import 'package:social_dating/data/models/discovery_filters.dart';
 import 'package:social_dating/data/models/profile.dart';
 import 'package:social_dating/data/models/swipe.dart';
+import 'package:social_dating/data/models/wallet.dart';
 import 'package:social_dating/data/repositories/mock_profile_repository.dart';
 import 'package:social_dating/data/repositories/mock_swipe_repository.dart';
+import 'package:social_dating/data/repositories/mock_wallet_repository.dart';
 
 // 23:59:59 and 00:00:00 in Nepal (UTC+05:45) on 14/15 October 2026.
 final _lastSecondOfNepalDay = DateTime.utc(2026, 10, 14, 18, 14, 59);
@@ -61,6 +63,10 @@ void main() {
       expect(formatPoints(1), '1 pt');
       expect(formatPoints(30), '30 pts');
       expect(formatPoints(100), '100 pts');
+      expect(formatPointsDecimal(0), '0.00 pts');
+      expect(formatPointsDecimal(30), '0.30 pts');
+      expect(formatPointsDecimal(100), '1.00 pts');
+      expect(formatPointsDecimal(4610), '46.10 pts');
     });
 
     test('the price is ten paisa', () {
@@ -186,7 +192,12 @@ void main() {
         );
         expect(unconfirmed.recorded, isFalse);
         expect(unconfirmed.rejection, SwipeRejection.paymentRequired);
-        expect(repo.balancePaisa, 100, reason: 'nothing charged');
+        // Constructor balance + daily free grant; nothing charged yet.
+        expect(
+          repo.balancePaisa,
+          100 + SwipeRules.dailyFreePointsMale,
+          reason: 'nothing charged',
+        );
         expect(repo.swipeLog, isEmpty);
 
         final confirmed = await repo.swipe(
@@ -196,13 +207,15 @@ void main() {
         );
         expect(confirmed.recorded, isTrue);
         expect(confirmed.chargedPaisa, 10);
-        expect(repo.balancePaisa, 90);
+        expect(repo.balancePaisa, 100 + SwipeRules.dailyFreePointsMale - 10);
         expect((await repo.fetchQuota()).dailyUsed, 21);
       },
     );
 
     test('insufficient funds are rejected and never go negative', () async {
-      final repo = _repo(balance: 9)..seedCounters(dailyUsed: 20);
+      // After the daily grant the spendable balance must still be below 10.
+      final repo = _repo(balance: 9 - SwipeRules.dailyFreePointsMale)
+        ..seedCounters(dailyUsed: 20);
       final outcome = await repo.swipe(
         'mock-1',
         SwipeDirection.left,
@@ -343,13 +356,15 @@ void main() {
       () async {
         final repo = _repo()..seedCounters(dailyUsed: 20);
         await repo.swipe('mock-1', SwipeDirection.right, confirmedPaid: true);
-        expect(repo.balancePaisa, 90);
+        // Constructor 100 + daily grant 100 - paid swipe 10.
+        expect(repo.balancePaisa, 190);
 
-        final undone = await repo.undoLast();
-        expect(undone?.profile.id, 'mock-1');
+        final undone = await repo.undoLast(confirmedPaid: true);
+        expect(undone?.profile?.id, 'mock-1');
+        // Rewind fee 100, then refund of the paid swipe 10 → 100.
         expect(repo.balancePaisa, 100);
         expect((await repo.fetchQuota()).dailyUsed, 20);
-        expect(await repo.undoLast(), isNull);
+        expect(await repo.undoLast(confirmedPaid: true), isNull);
       },
     );
 
@@ -367,6 +382,64 @@ void main() {
         throwsA(anything),
       );
     });
+
+    test(
+      'super like, rewind and discovery DM debit a shared wallet ledger',
+      () async {
+        final wallet = MockWalletRepository(latency: Duration.zero);
+        final starting = wallet.spendable;
+        final repo = MockSwipeRepository(
+          latency: Duration.zero,
+          spendableBalance: () => wallet.spendable,
+          chargeWallet: (points, title, kind, detail) => wallet.tryCharge(
+            points: points,
+            title: title,
+            kind: kind,
+            detail: detail,
+          ),
+          grantDailyWallet: (points, dayKey) => wallet.creditPromotional(
+            points: points,
+            title: 'Daily free points',
+            kind: WalletActivityKind.other,
+            detail: 'daily',
+            id: 'mock-tx-daily-$dayKey',
+          ),
+          refundWallet: (points, title, detail) => wallet.creditPromotional(
+            points: points,
+            title: title,
+            kind: WalletActivityKind.other,
+            detail: detail,
+          ),
+        );
+
+        await repo.fetchQuota();
+        final afterGrant = wallet.spendable;
+        expect(afterGrant, starting + SwipeRules.dailyFreePointsMale);
+
+        final superLike = await repo.swipe(
+          'mock-1',
+          SwipeDirection.superLike,
+          confirmedPaid: true,
+        );
+        expect(superLike.recorded, isTrue);
+        expect(wallet.spendable, afterGrant - SwipeRules.premiumActionPricePoints);
+
+        final undone = await repo.undoLast(confirmedPaid: true);
+        expect(undone?.rejection, isNull);
+        // Rewind costs 100; original super-like charge is refunded.
+        expect(wallet.spendable, afterGrant - SwipeRules.premiumActionPricePoints);
+
+        final dm = await repo.openDiscoveryMessage(
+          'mock-2',
+          confirmedPaid: true,
+        );
+        expect(dm.conversationId, isNotNull);
+        expect(
+          wallet.spendable,
+          afterGrant - (2 * SwipeRules.premiumActionPricePoints),
+        );
+      },
+    );
   });
 
   group('DiscoveryFilters', () {

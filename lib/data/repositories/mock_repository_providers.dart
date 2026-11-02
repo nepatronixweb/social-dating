@@ -8,6 +8,7 @@ import '../../core/utils/clock_provider.dart';
 import '../../features/discovery/providers/mock_discovery_providers.dart';
 import '../../features/auth/providers/session_provider.dart';
 import '../models/profile.dart';
+import '../models/wallet.dart';
 import '../services/service_providers.dart';
 import 'mock_auth_repository.dart';
 import 'mock_matching_repository.dart';
@@ -64,7 +65,8 @@ final mockPhotoRepositoryProvider = Provider<MockPhotoRepository>(
   (ref) => MockPhotoRepository(),
 );
 
-final mockWalletRepositoryProvider = Provider<MockWalletRepository>(
+final Provider<MockWalletRepository> mockWalletRepositoryProvider =
+    Provider<MockWalletRepository>(
   (ref) => MockWalletRepository(
     scenario: () => ref.read(mockScenarioProvider),
     now: () => ref.read(clockProvider)(),
@@ -93,10 +95,19 @@ final Provider<MockMatchingRepository> mockMatchingRepositoryProvider =
         scenario: () => ref.read(mockScenarioProvider),
         now: () => ref.read(clockProvider)(),
         viewerGender: () => ref.read(mockSwipeRepositoryProvider).viewerGender,
-        mockBalancePaisa: () =>
-            ref.read(mockSwipeRepositoryProvider).balancePaisa,
-        setMockBalancePaisa: (value) =>
-            ref.read(mockSwipeRepositoryProvider).balancePaisa = value,
+        mockBalancePaisa: () => ref.read(mockWalletRepositoryProvider).spendable,
+        setMockBalancePaisa: (value) {
+          final wallet = ref.read(mockWalletRepositoryProvider);
+          final current = wallet.spendable;
+          if (value >= current) return;
+          wallet.tryCharge(
+            points: current - value,
+            title: 'Paid message',
+            kind: WalletActivityKind.messageSpend,
+            detail:
+                'Points spent on a paid message charged to the point wallet.',
+          );
+        },
       ),
     );
 
@@ -104,7 +115,8 @@ final Provider<MockMatchingRepository> mockMatchingRepositoryProvider =
 /// the life of the app, so the scenario, clock and session are read lazily
 /// instead of watched (watching would rebuild it and lose the counters).
 /// Override in tests with latency: Duration.zero.
-final mockSwipeRepositoryProvider = Provider<MockSwipeRepository>(
+final Provider<MockSwipeRepository> mockSwipeRepositoryProvider =
+    Provider<MockSwipeRepository>(
   (ref) => MockSwipeRepository(
     scenario: () => ref.read(mockScenarioProvider),
     now: () => ref.read(clockProvider)(),
@@ -114,5 +126,30 @@ final mockSwipeRepositoryProvider = Provider<MockSwipeRepository>(
     hasPaidPremium: () =>
         ref.read(mockSubscriptionRepositoryProvider).hasPaidPremium,
     matching: ref.read(mockMatchingRepositoryProvider),
+    spendableBalance: () => ref.read(mockWalletRepositoryProvider).spendable,
+    chargeWallet: (points, title, kind, detail) =>
+        ref.read(mockWalletRepositoryProvider).tryCharge(
+          points: points,
+          title: title,
+          kind: kind,
+          detail: detail,
+        ),
+    grantDailyWallet: (points, dayKey) =>
+        ref.read(mockWalletRepositoryProvider).creditPromotional(
+          points: points,
+          title: 'Daily free points',
+          kind: WalletActivityKind.other,
+          detail:
+              '100 promotional points for today. Resets each Nepal calendar '
+              'day. Not cash and not withdrawable.',
+          id: 'mock-tx-daily-$dayKey',
+        ),
+    refundWallet: (points, title, detail) =>
+        ref.read(mockWalletRepositoryProvider).creditPromotional(
+          points: points,
+          title: title,
+          kind: WalletActivityKind.other,
+          detail: detail,
+        ),
   ),
 );

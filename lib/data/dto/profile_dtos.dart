@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/constants/swipe_rules.dart';
 import '../../core/errors/api_error_mapper.dart';
 import '../models/discovery_filters.dart';
 import '../models/profile.dart';
@@ -27,6 +28,7 @@ class ProfileDto {
     this.gender,
     this.lookingFor,
     this.photoUrls = const [],
+    this.spendablePoints,
   });
 
   final ProfileId id;
@@ -43,6 +45,7 @@ class ProfileDto {
   final ProfileGender? gender;
   final String? lookingFor;
   final List<String> photoUrls;
+  final int? spendablePoints;
 
   factory ProfileDto.fromJson(Object? json) =>
       ProfileDto.fromMap(JsonMap.from(json));
@@ -86,6 +89,7 @@ class ProfileDto {
       photoUrls: map.contains('photoUrls')
           ? map.stringList('photoUrls')
           : const [],
+      spendablePoints: map.optionalInteger('spendablePoints'),
     );
   }
 
@@ -104,6 +108,7 @@ class ProfileDto {
     'gender': gender?.name,
     'lookingFor': lookingFor,
     'photoUrls': photoUrls,
+    'spendablePoints': spendablePoints,
   };
 
   Profile toDomain() => Profile(
@@ -123,6 +128,7 @@ class ProfileDto {
     gender: gender,
     lookingFor: lookingFor,
     photoUrls: photoUrls,
+    spendablePoints: spendablePoints,
   );
 }
 
@@ -195,16 +201,20 @@ class SwipeRequestDto {
 
   factory SwipeRequestDto.fromJson(Object? json) {
     final map = JsonMap.from(json);
+    final direction = parseSwipeDirection(map.string('direction'));
+    if (direction == null) {
+      throw FormatException('Unknown swipe direction');
+    }
     return SwipeRequestDto(
       profileId: readProfileId(map, 'profileId'),
-      direction: map.enumValue('direction', SwipeDirection.values),
+      direction: direction,
       confirmedPaid: map.boolean('confirmedPaid'),
     );
   }
 
   Map<String, Object?> toJson() => {
     'profileId': profileId.raw,
-    'direction': direction.name,
+    'direction': swipeDirectionWire(direction),
     'confirmedPaid': confirmedPaid,
   };
 }
@@ -220,6 +230,7 @@ class SwipeQuotaDto {
     required this.pricePaisa,
     required this.dayKey,
     required this.resetsAt,
+    this.actionPricePaisa = const Paisa(SwipeRules.premiumActionPricePoints),
   });
 
   final bool profileComplete;
@@ -228,6 +239,7 @@ class SwipeQuotaDto {
   final int? freeDailyLimit;
   final Paisa balancePaisa;
   final Paisa pricePaisa;
+  final Paisa actionPricePaisa;
   final String dayKey;
   final DateTime resetsAt;
 
@@ -241,6 +253,11 @@ class SwipeQuotaDto {
     freeDailyLimit: map.optionalInteger('freeDailyLimit'),
     balancePaisa: Paisa.read(map, 'balancePaisa'),
     pricePaisa: Paisa.read(map, 'pricePaisa'),
+    actionPricePaisa: Paisa.readOptional(
+      map,
+      'actionPricePaisa',
+      fallback: SwipeRules.premiumActionPricePoints,
+    ),
     dayKey: map.string('dayKey'),
     resetsAt: map.dateTime('resetsAt'),
   );
@@ -252,6 +269,7 @@ class SwipeQuotaDto {
     'freeDailyLimit': freeDailyLimit,
     'balancePaisa': balancePaisa.toJson(),
     'pricePaisa': pricePaisa.toJson(),
+    'actionPricePaisa': actionPricePaisa.toJson(),
     'dayKey': dayKey,
     'resetsAt': resetsAt.toUtc().toIso8601String(),
   };
@@ -263,6 +281,7 @@ class SwipeQuotaDto {
     freeDailyLimit: freeDailyLimit,
     balancePaisa: balancePaisa.paisa,
     pricePaisa: pricePaisa.paisa,
+    actionPricePaisa: actionPricePaisa.paisa,
     dayKey: dayKey,
     resetsAt: resetsAt,
   );
@@ -273,12 +292,14 @@ class SwipeOutcomeDto {
   const SwipeOutcomeDto({
     required this.quota,
     this.matchedProfile,
+    this.conversationId,
     this.chargedPaisa = const Paisa(0),
     this.rejection,
   });
 
   final SwipeQuotaDto quota;
   final ProfileDto? matchedProfile;
+  final String? conversationId;
   final Paisa chargedPaisa;
   final SwipeRejection? rejection;
 
@@ -288,6 +309,7 @@ class SwipeOutcomeDto {
     return SwipeOutcomeDto(
       quota: SwipeQuotaDto.fromMap(map.object('quota')),
       matchedProfile: matched == null ? null : ProfileDto.fromMap(matched),
+      conversationId: map.optionalString('conversationId'),
       chargedPaisa: Paisa.readOptional(map, 'chargedPaisa'),
       rejection: map.optionalEnum('rejection', SwipeRejection.values),
     );
@@ -296,6 +318,7 @@ class SwipeOutcomeDto {
   Map<String, Object?> toJson() => {
     'quota': quota.toJson(),
     'matchedProfile': matchedProfile?.toJson(),
+    'conversationId': conversationId,
     'chargedPaisa': chargedPaisa.toJson(),
     'rejection': rejection?.name,
   };
@@ -309,6 +332,7 @@ class SwipeOutcomeDto {
     return SwipeOutcome.recorded(
       quota: quotaDomain,
       matchedProfile: matchedProfile?.toDomain(),
+      conversationId: conversationId,
       chargedPaisa: chargedPaisa.paisa,
     );
   }
@@ -316,19 +340,65 @@ class SwipeOutcomeDto {
 
 @immutable
 class UndoOutcomeDto {
-  const UndoOutcomeDto({required this.profile, required this.quota});
+  const UndoOutcomeDto({
+    required this.quota,
+    this.profile,
+    this.chargedPaisa = const Paisa(0),
+    this.rejection,
+  });
 
-  final ProfileDto profile;
+  final ProfileDto? profile;
   final SwipeQuotaDto quota;
+  final Paisa chargedPaisa;
+  final SwipeRejection? rejection;
 
   factory UndoOutcomeDto.fromJson(Object? json) {
     final map = JsonMap.from(json);
+    final profile = map.optionalObject('profile');
     return UndoOutcomeDto(
-      profile: ProfileDto.fromMap(map.object('profile')),
+      profile: profile == null ? null : ProfileDto.fromMap(profile),
       quota: SwipeQuotaDto.fromMap(map.object('quota')),
+      chargedPaisa: Paisa.readOptional(map, 'chargedPaisa'),
+      rejection: map.optionalEnum('rejection', SwipeRejection.values),
     );
   }
 
-  UndoOutcome toDomain() =>
-      UndoOutcome(profile: profile.toDomain(), quota: quota.toDomain());
+  UndoOutcome toDomain() => UndoOutcome(
+    profile: profile?.toDomain(),
+    quota: quota.toDomain(),
+    chargedPaisa: chargedPaisa.paisa,
+    rejection: rejection,
+  );
+}
+
+@immutable
+class DiscoveryMessageOutcomeDto {
+  const DiscoveryMessageOutcomeDto({
+    required this.quota,
+    this.conversationId,
+    this.chargedPaisa = const Paisa(0),
+    this.rejection,
+  });
+
+  final SwipeQuotaDto quota;
+  final String? conversationId;
+  final Paisa chargedPaisa;
+  final SwipeRejection? rejection;
+
+  factory DiscoveryMessageOutcomeDto.fromJson(Object? json) {
+    final map = JsonMap.from(json);
+    return DiscoveryMessageOutcomeDto(
+      quota: SwipeQuotaDto.fromMap(map.object('quota')),
+      conversationId: map.optionalString('conversationId'),
+      chargedPaisa: Paisa.readOptional(map, 'chargedPaisa'),
+      rejection: map.optionalEnum('rejection', SwipeRejection.values),
+    );
+  }
+
+  DiscoveryMessageOutcome toDomain() => DiscoveryMessageOutcome(
+    quota: quota.toDomain(),
+    conversationId: conversationId,
+    chargedPaisa: chargedPaisa.paisa,
+    rejection: rejection,
+  );
 }

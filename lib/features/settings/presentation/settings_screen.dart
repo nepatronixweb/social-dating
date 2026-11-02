@@ -13,6 +13,8 @@ import '../../../core/widgets/app_page.dart';
 import '../../../core/widgets/app_section.dart';
 import '../../../core/widgets/app_top_bar.dart';
 import '../../../core/widgets/menu_tile.dart';
+import '../../../data/api/app_paths.dart';
+import '../../../data/services/service_providers.dart';
 import '../../auth/providers/session_provider.dart';
 import '../providers/theme_mode_provider.dart';
 
@@ -24,6 +26,9 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
+    ref.watch(sessionProvider);
+    final account = ref.read(sessionProvider.notifier).account;
+    final restricted = account?.isRestricted ?? false;
 
     return AppPage(
       appBar: const AppTopBar(title: 'Settings'),
@@ -82,6 +87,16 @@ class SettingsScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
+                if (restricted)
+                  AppSection(
+                    title: 'Account restriction',
+                    child: MenuTile(
+                      icon: AppIcons.report,
+                      title: 'Appeal ${account!.restrictionStatus}',
+                      subtitle: 'Send a short note for staff review',
+                      onTap: () => _fileAppeal(context, ref),
+                    ),
+                  ),
                 AppSection(
                   title: 'Privacy and safety',
                   child: Column(
@@ -167,5 +182,49 @@ class SettingsScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _fileAppeal(BuildContext context, WidgetRef ref) async {
+    final controller = TextEditingController();
+    final body = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Appeal'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'Why should this restriction be lifted?',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (body == null || body.length < 8 || !context.mounted) return;
+
+    try {
+      final dio = ref.read(apiClientProvider).dio;
+      await dio.post<dynamic>(AppPaths.myAppeals, data: {'body': body});
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Appeal submitted for review.')),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not submit the appeal.')),
+      );
+    }
   }
 }

@@ -66,6 +66,7 @@ class SafetyReportDto {
     required this.createdAt,
     this.details = '',
     this.subjectName,
+    this.reportedAccountId,
   });
 
   final ReportId id;
@@ -73,6 +74,7 @@ class SafetyReportDto {
   final DateTime createdAt;
   final String details;
   final String? subjectName;
+  final String? reportedAccountId;
 
   factory SafetyReportDto.fromJson(Object? json) {
     final map = JsonMap.from(json);
@@ -83,6 +85,7 @@ class SafetyReportDto {
       createdAt: map.dateTime('createdAt'),
       details: map.optionalString('details', allowEmpty: true) ?? '',
       subjectName: map.optionalString('subjectName'),
+      reportedAccountId: map.optionalString('reportedAccountId'),
     );
   }
 
@@ -92,6 +95,7 @@ class SafetyReportDto {
     'createdAt': createdAt.toUtc().toIso8601String(),
     'details': details,
     'subjectName': subjectName,
+    'reportedAccountId': reportedAccountId,
   };
 
   SafetyReport toDomain() => SafetyReport(
@@ -100,6 +104,7 @@ class SafetyReportDto {
     createdAt: createdAt,
     details: details,
     subjectName: subjectName,
+    reportedAccountId: reportedAccountId,
   );
 }
 
@@ -109,11 +114,13 @@ class ReportRequestDto {
     required this.category,
     this.details = '',
     this.subjectName,
+    this.reportedAccountId,
   });
 
   final String category;
   final String details;
   final String? subjectName;
+  final String? reportedAccountId;
 
   factory ReportRequestDto.fromJson(Object? json) {
     final map = JsonMap.from(json);
@@ -121,6 +128,7 @@ class ReportRequestDto {
       category: map.string('category'),
       details: map.optionalString('details', allowEmpty: true) ?? '',
       subjectName: map.optionalString('subjectName'),
+      reportedAccountId: map.optionalString('reportedAccountId'),
     );
   }
 
@@ -128,6 +136,7 @@ class ReportRequestDto {
     'category': category,
     'details': details,
     'subjectName': subjectName,
+    'reportedAccountId': reportedAccountId,
   };
 }
 

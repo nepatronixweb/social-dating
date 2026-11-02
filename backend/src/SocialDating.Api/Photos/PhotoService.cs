@@ -29,12 +29,21 @@ public sealed class PhotoService(
 
     public async Task<IReadOnlyList<PhotoResponse>> ListMine(Guid accountId, CancellationToken ct)
     {
+        // Owner sees pending/approved; rejected+hidden stay out of the album.
         var rows = await db.Photos.AsNoTracking()
-            .Where(p => p.AccountId == accountId && p.Kind == "profile")
+            .Where(p =>
+                p.AccountId == accountId
+                && p.Kind == "profile"
+                && p.HiddenAt == null
+                && p.ReviewStatus != "rejected")
             .OrderBy(p => p.SortOrder)
             .ToListAsync(ct);
         return rows.Select(ToResponse).ToList();
     }
+
+    public Task<int> CountProfileAsync(Guid accountId, CancellationToken ct) =>
+        db.Photos.AsNoTracking()
+            .CountAsync(p => p.AccountId == accountId && p.Kind == "profile", ct);
 
     public async Task<string[]> UrlsFor(Guid accountId, CancellationToken ct)
     {
@@ -50,7 +59,11 @@ public sealed class PhotoService(
         if (ids.Length == 0) return [];
 
         var rows = await db.Photos.AsNoTracking()
-            .Where(p => ids.Contains(p.AccountId) && p.Kind == "profile")
+            .Where(p =>
+                ids.Contains(p.AccountId)
+                && p.Kind == "profile"
+                && p.HiddenAt == null
+                && p.ReviewStatus == "approved")
             .OrderBy(p => p.SortOrder)
             .ToListAsync(ct);
 
@@ -131,6 +144,8 @@ public sealed class PhotoService(
             Kind = kind,
             ByteSize = size,
             CreatedAt = time.GetUtcNow(),
+            // Chat attachments skip review; profile album waits for staff approval.
+            ReviewStatus = kind == "profile" ? "pending" : "approved",
         };
         try
         {
@@ -193,6 +208,25 @@ public sealed class PhotoService(
 
         var path = FilePath(accountId, photoId);
         if (File.Exists(path)) File.Delete(path);
+    }
+
+    /// <summary>Staff force-clear of every profile photo for an account.</summary>
+    public async Task<int> ClearProfilePhotosAsync(Guid accountId, CancellationToken ct)
+    {
+        var rows = await db.Photos
+            .Where(p => p.AccountId == accountId && p.Kind == "profile")
+            .ToListAsync(ct);
+        if (rows.Count == 0) return 0;
+
+        foreach (var row in rows)
+        {
+            db.Photos.Remove(row);
+            var path = FilePath(accountId, row.Id);
+            if (File.Exists(path)) File.Delete(path);
+        }
+
+        await db.SaveChangesAsync(ct);
+        return rows.Count;
     }
 
     public async Task<(byte[] Bytes, string ContentType)?> OpenSigned(Guid photoId, long exp, string sig, CancellationToken ct)

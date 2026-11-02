@@ -11,7 +11,7 @@ import '../../../../core/widgets/circle_action_button.dart';
 ///
 /// Undo is always visible so its place is stable, but it is disabled unless
 /// [onUndo] is provided (the local flag is on and there is something to undo).
-/// Super like and message are not built yet; their callbacks only explain that.
+/// Super like and message charge premium points for unsubscribed males.
 class SwipeActionRow extends StatelessWidget {
   const SwipeActionRow({
     super.key,

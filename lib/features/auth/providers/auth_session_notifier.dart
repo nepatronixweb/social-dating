@@ -28,6 +28,9 @@ class AuthSessionNotifier extends SessionNotifier {
   /// Used only when a state was injected without an account (tests, debug).
   static const String _unknownAccountId = 'mock-account-unknown';
 
+  /// Current account snapshot (null when logged out).
+  AccountState? get account => _account;
+
   String get _accountId => _account?.id ?? _unknownAccountId;
 
   @override

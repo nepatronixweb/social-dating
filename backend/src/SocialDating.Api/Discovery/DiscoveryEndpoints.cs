@@ -11,6 +11,7 @@ public static class DiscoveryEndpoints
         discovery.MapGet("/quota", FetchQuota);
         discovery.MapPost("/swipes", Swipe);
         discovery.MapPost("/undo", Undo);
+        discovery.MapPost("/message", Message);
     }
 
     static async Task<IResult> FetchDeck(
@@ -53,12 +54,24 @@ public static class DiscoveryEndpoints
     ) => Results.Ok(await discovery.SwipeAsync(http.User.RequireAccountId(), body, ct));
 
     static async Task<IResult> Undo(
+        UndoRequest? body,
         HttpContext http,
         IDiscoveryService discovery,
         CancellationToken ct
     )
     {
-        var result = await discovery.UndoLastAsync(http.User.RequireAccountId(), ct);
+        var result = await discovery.UndoLastAsync(
+            http.User.RequireAccountId(),
+            body ?? new UndoRequest(false),
+            ct
+        );
         return result is null ? Results.NoContent() : Results.Ok(result);
     }
+
+    static async Task<IResult> Message(
+        DiscoveryMessageRequest body,
+        HttpContext http,
+        IDiscoveryService discovery,
+        CancellationToken ct
+    ) => Results.Ok(await discovery.MessageAsync(http.User.RequireAccountId(), body, ct));
 }

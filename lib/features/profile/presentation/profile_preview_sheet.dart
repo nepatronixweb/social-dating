@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../core/routing/app_routes.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_sizes.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -117,6 +119,21 @@ class _ProfilePreview extends StatelessWidget {
           ),
         ],
         AppSpacing.gapXl,
+        AppButton(
+          label: 'Report ${profile.displayName}',
+          variant: AppButtonVariant.secondary,
+          icon: AppIcons.report,
+          onPressed: () {
+            Navigator.of(context).pop();
+            context.push(
+              AppRoutes.reportUser(
+                name: profile.displayName,
+                accountId: profile.id,
+              ),
+            );
+          },
+        ),
+        AppSpacing.gapSm,
         AppButton(
           label: 'Close',
           variant: AppButtonVariant.secondary,

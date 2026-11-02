@@ -16,6 +16,15 @@ String formatPoints(int points) {
   return '${negative ? '-' : ''}${_groupDigits(abs)} $unit';
 }
 
+/// Formats points as a two-decimal balance (`46.10 pts`). 100 points = 1.00.
+String formatPointsDecimal(int points) {
+  final negative = points < 0;
+  final abs = points.abs();
+  final whole = abs ~/ 100;
+  final frac = (abs % 100).toString().padLeft(2, '0');
+  return '${negative ? '-' : ''}${_groupDigits(whole)}.$frac pts';
+}
+
 String _groupDigits(int value) {
   final digits = value.toString();
   final grouped = StringBuffer();

@@ -112,20 +112,12 @@ public class ChatServiceTests : IDisposable
             new SendMessageRequest("Hello there", false),
             CancellationToken.None
         );
-        Assert.Equal("paymentRequired", outcome.Rejection);
-        Assert.True(outcome.Quote!.SenderPays);
-        Assert.Equal(20, outcome.Quote.CostPaisa);
-        Assert.Equal(WalletService.WelcomeBonusPoints, outcome.BalancePaisa);
-
-        var confirmed = await _chat.SendAsync(
-            nabin.Id,
-            matchId,
-            new SendMessageRequest("Hello there", true),
-            CancellationToken.None
+        Assert.Null(outcome.Rejection);
+        Assert.Equal(20, outcome.ChargedPaisa);
+        Assert.Equal(
+            WalletService.WelcomeBonusPoints + WalletService.DailyFreePointsMale - 20,
+            outcome.BalancePaisa
         );
-        Assert.Null(confirmed.Rejection);
-        Assert.Equal(20, confirmed.ChargedPaisa);
-        Assert.Equal(WalletService.WelcomeBonusPoints - 20, confirmed.BalancePaisa);
         Assert.Single((await _chat.FetchMessagesAsync(nabin.Id, matchId, CancellationToken.None)).Items);
 
         var ashaWallet = await new WalletService(_db, new FixedTime(_now)).FetchSummaryAsync(

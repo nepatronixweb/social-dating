@@ -47,71 +47,43 @@ String? _topId(WidgetTester tester) =>
 
 List<Rect> _actionRects(WidgetTester tester) => [
   for (final tip in [
-    'Undo last swipe (not available yet)',
+    'Undo last swipe',
     'Pass on ${_avery.displayName}',
-    'Super like ${_avery.displayName} (coming soon)',
+    'Super like ${_avery.displayName}',
     'Like ${_avery.displayName}',
-    'Message ${_avery.displayName} (coming soon)',
+    'Message ${_avery.displayName}',
   ])
     tester.getRect(find.byTooltip(tip)),
 ];
 
 void main() {
   group('header', () {
-    testWidgets('shows the brand, the bell, four tabs and the bolt', (
+    testWidgets('shows the brand, For You only, the bell and the bolt', (
       tester,
     ) async {
       await _open(tester);
-      expect(find.text('Social Dating'), findsOneWidget);
+      expect(find.byType(BrandMark), findsWidgets);
+      expect(find.text('Social Dating'), findsNothing);
       expect(
         find.byWidgetPredicate(
           (w) => w is Tooltip && (w.message ?? '').startsWith('Notifications'),
         ),
         findsOneWidget,
       );
-      for (final tab in DiscoveryCategory.values) {
-        expect(find.text(tab.label), findsOneWidget);
-      }
+      expect(find.text('For You'), findsOneWidget);
+      expect(find.text('Double Date'), findsNothing);
+      expect(find.text('Astrology'), findsNothing);
+      expect(find.text('Music'), findsNothing);
       expect(find.byTooltip('Discovery preferences'), findsOneWidget);
       expect(find.byIcon(AppIcons.bolt), findsWidgets);
     });
 
-    testWidgets('For You is the selected tab', (tester) async {
-      final semantics = tester.ensureSemantics();
+    testWidgets('For You is the only category label', (tester) async {
       await _open(tester);
-      expect(
-        tester.getSemantics(find.bySemanticsLabel('For You')),
-        matchesSemantics(
-          label: 'For You',
-          isButton: true,
-          isSelected: true,
-          hasSelectedState: true,
-          hasTapAction: true,
-          hasEnabledState: false,
-          isFocusable: false,
-        ),
-      );
-      semantics.dispose();
-    });
-
-    testWidgets('the other tabs say they are coming soon and change nothing', (
-      tester,
-    ) async {
-      await _open(tester);
-      for (final tab in [
-        DiscoveryCategory.doubleDate,
-        DiscoveryCategory.astrology,
-        DiscoveryCategory.music,
-      ]) {
-        // The test font is wide, so the row may need to scroll.
-        await tester.ensureVisible(find.text(tab.label));
-        await tester.pump();
-        await tester.tap(find.text(tab.label));
-        await pumpFrames(tester);
-        expect(find.text('${tab.label} is coming soon'), findsOneWidget);
-      }
-      expect(_topId(tester), _avery.id, reason: 'still the same deck');
-      expect(find.text('${_avery.displayName}, ${_avery.age}'), findsOneWidget);
+      expect(find.text('For You'), findsOneWidget);
+      expect(find.text('Double Date'), findsNothing);
+      expect(find.text('Astrology'), findsNothing);
+      expect(find.text('Music'), findsNothing);
     });
 
     testWidgets('the bolt opens the discovery preferences', (tester) async {
@@ -257,7 +229,7 @@ void main() {
       }
     });
 
-    testWidgets('star and send are not built, and say so', (tester) async {
+    testWidgets('star charges points without a pay sheet', (tester) async {
       await _open(tester);
 
       CircleActionButton button(IconData icon) =>
@@ -269,28 +241,22 @@ void main() {
 
       button(AppIcons.star).onPressed!();
       await pumpFrames(tester);
-      expect(find.text('Super like is coming soon'), findsOneWidget);
-
-      button(AppIcons.send).onPressed!();
-      await pumpFrames(tester);
-      expect(
-        find.text('Messaging before a match is coming soon'),
-        findsOneWidget,
-      );
-      expect(_topId(tester), _avery.id, reason: 'nothing was swiped');
+      expect(find.text('Send a super like?'), findsNothing);
+      expect(find.text('Pay 100 pts'), findsNothing);
+      // Avery is gone; male viewers skip other males, so next is Riley.
+      expect(_topId(tester), 'mock-3');
     });
 
     testWidgets('the heart still likes and the X still passes', (tester) async {
       await _open(tester);
       await tester.tap(find.byTooltip('Like Avery Sample'));
       await pumpFrames(tester);
-      expect(_topId(tester), mockProfiles[1].id);
+      // Male viewers skip other males, so Jordan (mock-2) is not in the deck.
+      expect(_topId(tester), 'mock-3');
 
-      await tester.tap(
-        find.byTooltip('Pass on ${mockProfiles[1].displayName}'),
-      );
+      await tester.tap(find.byTooltip('Pass on Riley Demo'));
       await pumpFrames(tester);
-      expect(_topId(tester), mockProfiles[2].id);
+      expect(_topId(tester), 'mock-4');
     });
   });
 
@@ -386,7 +352,7 @@ void main() {
           // The heart still likes at this size.
           await tester.tap(find.byTooltip('Like Avery Sample'));
           await pumpFrames(tester);
-          expect(_topId(tester), mockProfiles[1].id);
+          expect(_topId(tester), 'mock-3');
         });
       }
     }

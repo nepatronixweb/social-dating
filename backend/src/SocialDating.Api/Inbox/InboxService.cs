@@ -12,6 +12,14 @@ public interface IInboxService
     Task NotifyLikeAsync(Guid recipientId, Account from, CancellationToken ct);
     Task NotifyMatchAsync(Account a, Account b, Guid matchId, CancellationToken ct);
     Task NotifyMessageAsync(Guid recipientId, Account from, Guid matchId, CancellationToken ct);
+    Task NotifySystemBulkAsync(
+        IReadOnlyList<Guid> accountIds,
+        string title,
+        string body,
+        CancellationToken ct
+    );
+
+    Task NotifySystemAsync(Guid accountId, string title, string body, CancellationToken ct);
 }
 
 public sealed class NullInboxService : IInboxService
@@ -26,6 +34,16 @@ public sealed class NullInboxService : IInboxService
     public Task NotifyLikeAsync(Guid recipientId, Account from, CancellationToken ct) => Task.CompletedTask;
     public Task NotifyMatchAsync(Account a, Account b, Guid matchId, CancellationToken ct) => Task.CompletedTask;
     public Task NotifyMessageAsync(Guid recipientId, Account from, Guid matchId, CancellationToken ct) =>
+        Task.CompletedTask;
+
+    public Task NotifySystemBulkAsync(
+        IReadOnlyList<Guid> accountIds,
+        string title,
+        string body,
+        CancellationToken ct
+    ) => Task.CompletedTask;
+
+    public Task NotifySystemAsync(Guid accountId, string title, string body, CancellationToken ct) =>
         Task.CompletedTask;
 }
 
@@ -137,6 +155,35 @@ public sealed class InboxService(AppDbContext db, TimeProvider time) : IInboxSer
             ct
         );
     }
+
+    public async Task NotifySystemBulkAsync(
+        IReadOnlyList<Guid> accountIds,
+        string title,
+        string body,
+        CancellationToken ct
+    )
+    {
+        if (accountIds.Count == 0) return;
+        foreach (var accountId in accountIds.Distinct())
+        {
+            db.InboxNotifications.Add(
+                new InboxNotification
+                {
+                    Id = Guid.NewGuid(),
+                    AccountId = accountId,
+                    Type = "system",
+                    Title = title,
+                    Body = body,
+                    CreatedAt = Now,
+                }
+            );
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public Task NotifySystemAsync(Guid accountId, string title, string body, CancellationToken ct) =>
+        NotifySystemBulkAsync([accountId], title, body, ct);
 
     async Task Add(
         Guid accountId,

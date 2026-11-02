@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/routing/app_routes.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_sizes.dart';
@@ -59,7 +60,21 @@ class ProfileDetailScreen extends ConsumerWidget {
     }
 
     return AppPage(
-      appBar: AppTopBar(title: resolved.displayName),
+      appBar: AppTopBar(
+        title: resolved.displayName,
+        actions: [
+          IconButton(
+            tooltip: 'Report ${resolved.displayName}',
+            icon: const Icon(AppIcons.report),
+            onPressed: () => context.push(
+              AppRoutes.reportUser(
+                name: resolved.displayName,
+                accountId: resolved.id,
+              ),
+            ),
+          ),
+        ],
+      ),
       body: ProfileDetailBody(profile: resolved),
       bottomBar: Padding(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),

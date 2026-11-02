@@ -196,7 +196,10 @@ public class DiscoveryServiceTests : IDisposable
             CancellationToken.None
         );
         Assert.Equal("paymentRequired", unconfirmed.Rejection);
-        Assert.Equal(WalletService.WelcomeBonusPoints, unconfirmed.Quota.BalancePaisa);
+        var starting =
+            WalletService.WelcomeBonusPoints + WalletService.DailyFreePointsMale;
+        Assert.Equal(starting, unconfirmed.Quota.BalancePaisa);
+        Assert.Equal(DiscoveryService.PremiumActionPricePaisa, unconfirmed.Quota.ActionPricePaisa);
 
         var paid = await _discovery.SwipeAsync(
             viewer.Id,
@@ -205,10 +208,76 @@ public class DiscoveryServiceTests : IDisposable
         );
         Assert.Null(paid.Rejection);
         Assert.Equal(DiscoveryService.ExtraSwipePricePaisa, paid.ChargedPaisa);
-        Assert.Equal(
-            WalletService.WelcomeBonusPoints - DiscoveryService.ExtraSwipePricePaisa,
-            paid.Quota.BalancePaisa
+        Assert.Equal(starting - DiscoveryService.ExtraSwipePricePaisa, paid.Quota.BalancePaisa);
+    }
+
+    [Fact]
+    public async Task super_like_charges_male_and_credits_admin()
+    {
+        var viewer = SeedPerson("Nabin", "man", "Lalitpur");
+        var other = SeedPerson("Asha", "woman", "Pokhara");
+        await _db.SaveChangesAsync();
+
+        var needConfirm = await _discovery.SwipeAsync(
+            viewer.Id,
+            new SwipeRequest(other.Id.ToString(), "super", false),
+            CancellationToken.None
         );
+        Assert.Equal("paymentRequired", needConfirm.Rejection);
+
+        var paid = await _discovery.SwipeAsync(
+            viewer.Id,
+            new SwipeRequest(other.Id.ToString(), "super", true),
+            CancellationToken.None
+        );
+        Assert.Null(paid.Rejection);
+        Assert.Equal(DiscoveryService.PremiumActionPricePaisa, paid.ChargedPaisa);
+
+        var admin = await AdminAccount.EnsureAsync(_db, _now, CancellationToken.None);
+        await _db.SaveChangesAsync();
+        var adminEarned = await _db.WalletEntries
+            .Where(e => e.AccountId == admin.Id && e.Bucket == "earned")
+            .SumAsync(e => e.Points);
+        Assert.Equal(DiscoveryService.PremiumActionPricePaisa, adminEarned);
+    }
+
+    [Fact]
+    public async Task discovery_message_and_rewind_charge_male_to_admin()
+    {
+        var viewer = SeedPerson("Nabin", "man", "Lalitpur");
+        var other = SeedPerson("Harper", "woman", "Kathmandu");
+        await _db.SaveChangesAsync();
+
+        await _discovery.SwipeAsync(
+            viewer.Id,
+            new SwipeRequest(other.Id.ToString(), "left", false),
+            CancellationToken.None
+        );
+
+        var rewindBlocked = await _discovery.UndoLastAsync(
+            viewer.Id,
+            new UndoRequest(false),
+            CancellationToken.None
+        );
+        Assert.Equal("paymentRequired", rewindBlocked!.Rejection);
+
+        var rewind = await _discovery.UndoLastAsync(
+            viewer.Id,
+            new UndoRequest(true),
+            CancellationToken.None
+        );
+        Assert.Null(rewind!.Rejection);
+        Assert.Equal(DiscoveryService.PremiumActionPricePaisa, rewind.ChargedPaisa);
+        Assert.Equal("Harper", rewind.Profile!.DisplayName);
+
+        var message = await _discovery.MessageAsync(
+            viewer.Id,
+            new DiscoveryMessageRequest(other.Id.ToString(), true),
+            CancellationToken.None
+        );
+        Assert.Null(message.Rejection);
+        Assert.Equal(DiscoveryService.PremiumActionPricePaisa, message.ChargedPaisa);
+        Assert.False(string.IsNullOrWhiteSpace(message.ConversationId));
     }
 
     [Fact]

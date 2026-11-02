@@ -227,24 +227,37 @@ class _ReceivedView extends ConsumerWidget {
                 key: ValueKey('received-${like.profile.id}'),
                 profile: like.profile,
                 timestamp: timestampLabel('Liked you', like.likedAt, now: now),
-                onTap: () => showProfilePreviewSheet(context, like.profile),
-                actions: _Actions(
-                  primary: AppButton(
-                    label: 'Like back',
-                    icon: AppIcons.heart,
-                    isLoading: busy.contains(like.profile.id),
-                    onPressed: busy.contains(like.profile.id)
-                        ? null
-                        : () => onLikeBack(like),
-                  ),
-                  secondary: AppButton(
-                    label: 'Not now',
-                    variant: AppButtonVariant.secondary,
-                    onPressed: busy.contains(like.profile.id)
-                        ? null
-                        : () => onDecline(like),
-                  ),
-                ),
+                blurred: needsPaywall,
+                semanticLabel: needsPaywall
+                    ? 'Someone liked you. Unlock with Premium.'
+                    : null,
+                onTap: needsPaywall
+                    ? () => context.push(AppRoutes.subscription)
+                    : () => showProfilePreviewSheet(context, like.profile),
+                actions: needsPaywall
+                    ? AppButton(
+                        label: 'Unlock with Premium',
+                        icon: AppIcons.premium,
+                        onPressed: () =>
+                            context.push(AppRoutes.subscription),
+                      )
+                    : _Actions(
+                        primary: AppButton(
+                          label: 'Like back',
+                          icon: AppIcons.heart,
+                          isLoading: busy.contains(like.profile.id),
+                          onPressed: busy.contains(like.profile.id)
+                              ? null
+                              : () => onLikeBack(like),
+                        ),
+                        secondary: AppButton(
+                          label: 'Not now',
+                          variant: AppButtonVariant.secondary,
+                          onPressed: busy.contains(like.profile.id)
+                              ? null
+                              : () => onDecline(like),
+                        ),
+                      ),
               ),
               AppSpacing.gapMd,
             ],

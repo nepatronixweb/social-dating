@@ -1,3 +1,4 @@
+using SocialDating.Api.Admin;
 using SocialDating.Api.Auth;
 
 namespace SocialDating.Api.Wallet;
@@ -10,6 +11,7 @@ public static class WalletEndpoints
         wallet.MapGet("", FetchSummary);
         wallet.MapGet("/transactions", FetchTransactions);
         wallet.MapGet("/transactions/{id:guid}", FetchTransaction);
+        wallet.MapPost("/promo-codes/redeem", RedeemPromo);
 
         var withdrawals = wallet.MapGroup("/withdrawals");
         withdrawals.MapGet("/eligibility", FetchEligibility);
@@ -18,6 +20,13 @@ public static class WalletEndpoints
         withdrawals.MapPost("", SubmitWithdrawal);
         withdrawals.MapPost("{id:guid}/cancel", CancelWithdrawal);
     }
+
+    static async Task<IResult> RedeemPromo(
+        RedeemPromoRequest body,
+        HttpContext http,
+        IAdminGrowthService growth,
+        CancellationToken ct
+    ) => Results.Ok(await growth.RedeemPromoAsync(http.User.RequireAccountId(), body, ct));
 
     static async Task<IResult> FetchSummary(
         HttpContext http,

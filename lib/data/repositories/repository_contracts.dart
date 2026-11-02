@@ -74,6 +74,11 @@ abstract interface class WalletRepository {
   });
 
   Future<WithdrawalRequest> cancelWithdrawal(String id);
+
+  /// Redeems a staff-created promo code into promotional or earned points.
+  Future<({int points, String bucket, int spendablePoints})> redeemPromo(
+    String code,
+  );
 }
 
 abstract interface class SubscriptionRepository {

@@ -4,8 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/feature_flags.dart';
-import '../../../core/utils/clock_provider.dart';
 import '../../../core/constants/swipe_rules.dart';
+import '../../../core/utils/clock_provider.dart';
 import '../../../data/models/discovery_filters.dart';
 import '../../../data/models/profile.dart';
 import '../../../data/models/swipe.dart';
@@ -75,6 +75,7 @@ class DiscoveryState {
     this.loadedCount = 0,
     this.lastSwiped,
     this.newMatch,
+    this.matchConversationId,
     this.error,
     this.message,
   });
@@ -93,6 +94,9 @@ class DiscoveryState {
   /// Set when a swipe produced a match; the screen shows the celebration and
   /// then clears it.
   final Profile? newMatch;
+
+  /// Conversation id for [newMatch] (API match id or mock chat id).
+  final String? matchConversationId;
   final Object? error;
 
   /// A one-off notice for the screen to show (for example a failed swipe).
@@ -109,6 +113,7 @@ class DiscoveryState {
     Profile? lastSwiped,
     bool clearLastSwiped = false,
     Profile? newMatch,
+    String? matchConversationId,
     bool clearMatch = false,
     Object? error,
     bool clearError = false,
@@ -121,6 +126,9 @@ class DiscoveryState {
     loadedCount: loadedCount ?? this.loadedCount,
     lastSwiped: clearLastSwiped ? null : (lastSwiped ?? this.lastSwiped),
     newMatch: clearMatch ? null : (newMatch ?? this.newMatch),
+    matchConversationId: clearMatch
+        ? null
+        : (matchConversationId ?? this.matchConversationId),
     error: clearError ? null : (error ?? this.error),
     message: clearMessage ? null : (message ?? this.message),
   );
@@ -249,6 +257,7 @@ class DiscoveryController extends Notifier<DiscoveryState> {
           state = state.copyWith(
             quota: outcome.quota,
             newMatch: outcome.matchedProfile,
+            matchConversationId: outcome.conversationId,
           );
           // Likes, matches, chat and wallet must reflect this swipe.
           ref.read(matchingRevisionProvider.notifier).bump();
@@ -273,12 +282,13 @@ class DiscoveryController extends Notifier<DiscoveryState> {
     return job;
   }
 
-  void _restore(Profile profile, SwipeQuota? quota, String message) {
+  void _restore(Profile profile, SwipeQuota? quota, String? message) {
     state = state.copyWith(
       deck: [profile, ...state.deck],
       quota: quota,
       clearLastSwiped: true,
       message: message,
+      clearMessage: message == null,
     );
     if (quota == null) unawaited(refreshQuota());
   }
@@ -287,13 +297,25 @@ class DiscoveryController extends Notifier<DiscoveryState> {
   bool get canUndo =>
       ref.read(featureFlagsProvider).undoSwipe && state.lastSwiped != null;
 
-  /// Brings the last card back. Mock-only, and only when the local flag is on.
-  Future<void> undo() async {
-    if (!canUndo) return;
+  /// Whether this account pays for super like, discovery message and rewind.
+  bool get mustPayPremiumActions {
+    final gender = ref.read(sessionProvider).gender;
+    return gender == null || gender.needsPaidSubscription;
+  }
+
+  int get premiumActionCostPaisa =>
+      state.quota?.actionPricePaisa ?? SwipeRules.premiumActionPricePoints;
+
+  /// Brings the last card back. Unsubscribed males must confirm payment first.
+  Future<SwipeRejection?> undo({bool confirmedPaid = false}) async {
+    if (!canUndo) return null;
+    SwipeRejection? rejection;
     final job = _queue.then((_) async {
       if (!ref.mounted) return;
       try {
-        final outcome = await ref.read(swipeRepositoryProvider).undoLast();
+        final outcome = await ref
+            .read(swipeRepositoryProvider)
+            .undoLast(confirmedPaid: confirmedPaid);
         if (!ref.mounted) return;
         if (outcome == null) {
           state = state.copyWith(
@@ -302,8 +324,18 @@ class DiscoveryController extends Notifier<DiscoveryState> {
           );
           return;
         }
+        if (outcome.rejection != null) {
+          rejection = outcome.rejection;
+          state = state.copyWith(quota: outcome.quota);
+          return;
+        }
+        final profile = outcome.profile;
+        if (profile == null) {
+          state = state.copyWith(quota: outcome.quota, message: 'Nothing to undo.');
+          return;
+        }
         state = state.copyWith(
-          deck: [outcome.profile, ...state.deck],
+          deck: [profile, ...state.deck],
           quota: outcome.quota,
           clearLastSwiped: true,
           clearMatch: true,
@@ -317,6 +349,108 @@ class DiscoveryController extends Notifier<DiscoveryState> {
     });
     _queue = job;
     await job;
+    return rejection;
+  }
+
+  /// Super-likes the top card. Returns a rejection when payment is needed.
+  Future<SwipeRejection?> superLike({bool confirmedPaid = false}) async {
+    final profile = state.top;
+    final quota = state.quota;
+    if (profile == null || quota == null) return null;
+
+    state = state.copyWith(
+      deck: state.deck.sublist(1),
+      lastSwiped: profile,
+      clearMessage: true,
+      quota: mustPayPremiumActions && confirmedPaid
+          ? quota.copyWith(
+              balancePaisa: quota.balancePaisa - premiumActionCostPaisa,
+            )
+          : quota,
+    );
+
+    SwipeRejection? rejection;
+    final job = _queue.then((_) async {
+      if (!ref.mounted) return;
+      try {
+        final outcome = await ref
+            .read(swipeRepositoryProvider)
+            .swipe(
+              profile.id,
+              SwipeDirection.superLike,
+              confirmedPaid: confirmedPaid,
+            );
+        if (!ref.mounted) return;
+        if (!outcome.recorded) {
+          rejection = outcome.rejection;
+          _restore(profile, outcome.quota, null);
+          return;
+        }
+        state = state.copyWith(
+          quota: outcome.quota,
+          newMatch: outcome.matchedProfile,
+          matchConversationId: outcome.conversationId,
+        );
+        ref.read(matchingRevisionProvider.notifier).bump();
+        ref.read(walletRevisionProvider.notifier).bump();
+      } catch (_) {
+        if (!ref.mounted) return;
+        _restore(
+          profile,
+          null,
+          'Could not send that super like. Check your connection and try again.',
+        );
+      }
+    });
+    _queue = job;
+    await job;
+    return rejection;
+  }
+
+  /// Opens a discovery DM with the top card. Returns conversation id on success.
+  Future<({String? conversationId, SwipeRejection? rejection})>
+  openDiscoveryMessage({bool confirmedPaid = false}) async {
+    final profile = state.top;
+    if (profile == null) {
+      return (conversationId: null, rejection: null);
+    }
+
+    String? conversationId;
+    SwipeRejection? rejection;
+    final job = _queue.then((_) async {
+      if (!ref.mounted) return;
+      try {
+        final outcome = await ref
+            .read(swipeRepositoryProvider)
+            .openDiscoveryMessage(
+              profile.id,
+              confirmedPaid: confirmedPaid,
+            );
+        if (!ref.mounted) return;
+        state = state.copyWith(quota: outcome.quota);
+        if (outcome.rejection != null) {
+          rejection = outcome.rejection;
+          return;
+        }
+        conversationId = outcome.conversationId;
+        if (conversationId != null) {
+          state = state.copyWith(
+            deck: state.deck.where((p) => p.id != profile.id).toList(),
+            lastSwiped: profile,
+          );
+          ref.read(matchingRevisionProvider.notifier).bump();
+          ref.read(walletRevisionProvider.notifier).bump();
+        }
+      } catch (_) {
+        if (!ref.mounted) return;
+        state = state.copyWith(
+          message: 'Could not open that message. Check your connection.',
+        );
+      }
+    });
+    _queue = job;
+    await job;
+    return (conversationId: conversationId, rejection: rejection);
   }
 
   void clearMatch() => state = state.copyWith(clearMatch: true);

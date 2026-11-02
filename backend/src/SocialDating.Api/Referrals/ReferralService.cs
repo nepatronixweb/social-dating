@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SocialDating.Api.Auth;
 using SocialDating.Api.Data;
+using SocialDating.Api.Ops;
 
 namespace SocialDating.Api.Referrals;
 
@@ -20,7 +21,8 @@ public interface IReferralService
 public sealed class ReferralService(
     AppDbContext db,
     TimeProvider time,
-    IOptions<ReferralOptions> options
+    IOptions<ReferralOptions> options,
+    IAppConfigService? appConfig = null
 ) : IReferralService
 {
     public const int CommissionPaisa = 1000;
@@ -195,6 +197,24 @@ public sealed class ReferralService(
 
     async Task AttributeAsync(Guid inviteeId, string? rawCode, bool required, CancellationToken ct)
     {
+        if (appConfig is not null)
+        {
+            var cfg = await appConfig.GetAsync(ct);
+            if (cfg.KillReferrals)
+            {
+                if (required)
+                {
+                    throw new AuthException(
+                        503,
+                        "Referrals paused.",
+                        "Invite codes are temporarily unavailable."
+                    );
+                }
+
+                return;
+            }
+        }
+
         var code = Normalize(rawCode);
         if (code is null)
         {

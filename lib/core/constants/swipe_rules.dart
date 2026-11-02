@@ -16,6 +16,14 @@ abstract final class SwipeRules {
   /// Price of each swipe beyond the free limit, in paisa (NPR 0.10).
   static const int extraSwipePricePaisa = 10;
 
+  /// Daily promotional points granted to males without a paid subscription.
+  /// 1 point = 1 paisa.
+  static const int dailyFreePointsMale = 100;
+
+  /// Super like, discovery message and rewind each cost this many points for
+  /// males without a paid subscription. Credited to the admin wallet.
+  static const int premiumActionPricePoints = 100;
+
   /// Nepal Standard Time is UTC+05:45 with no daylight saving.
   static const Duration nepalUtcOffset = Duration(hours: 5, minutes: 45);
 

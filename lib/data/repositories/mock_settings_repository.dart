@@ -67,6 +67,7 @@ class MockSettingsRepository implements SettingsRepository {
     String details = '',
     String? attachmentAsset,
     String? subjectName,
+    String? reportedAccountId,
   }) => _change(() async {
     final report = SafetyReport(
       id: 'mock-report-${++_reportCounter}',
@@ -74,6 +75,7 @@ class MockSettingsRepository implements SettingsRepository {
       details: details.trim(),
       attachmentAsset: attachmentAsset,
       subjectName: subjectName,
+      reportedAccountId: reportedAccountId,
       createdAt: _now(),
     );
     _lastReport = report;

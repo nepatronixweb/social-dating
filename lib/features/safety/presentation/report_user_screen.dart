@@ -22,9 +22,14 @@ import '../../../core/widgets/screen_header.dart';
 import '../../../data/repositories/repository_providers.dart';
 
 class ReportUserScreen extends ConsumerStatefulWidget {
-  const ReportUserScreen({super.key, this.subjectName});
+  const ReportUserScreen({
+    super.key,
+    this.subjectName,
+    this.reportedAccountId,
+  });
 
   final String? subjectName;
+  final String? reportedAccountId;
 
   @override
   ConsumerState<ReportUserScreen> createState() => _ReportUserScreenState();
@@ -99,6 +104,7 @@ class _ReportUserScreenState extends ConsumerState<ReportUserScreen> {
             details: _details.text,
             attachmentAsset: _attachment,
             subjectName: widget.subjectName,
+            reportedAccountId: widget.reportedAccountId,
           );
       if (!mounted) return;
       context.go(AppRoutes.reportSubmitted);

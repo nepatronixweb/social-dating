@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Features;
@@ -6,14 +7,18 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using SocialDating.Api.Admin;
 using SocialDating.Api.Auth;
 using SocialDating.Api.Data;
 using SocialDating.Api.Chat;
 using SocialDating.Api.Discovery;
 using SocialDating.Api.Hosting;
 using SocialDating.Api.Inbox;
+using SocialDating.Api.Ops;
 using SocialDating.Api.Photos;
+using SocialDating.Api.Profile;
 using SocialDating.Api.Referrals;
+using SocialDating.Api.Safety;
 using SocialDating.Api.Subscription;
 using SocialDating.Api.Wallet;
 
@@ -26,6 +31,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection(AdminOptions.SectionName));
 builder.Services.Configure<ReferralOptions>(builder.Configuration.GetSection(ReferralOptions.SectionName));
 builder.Services.Configure<CorsSettings>(builder.Configuration.GetSection(CorsSettings.SectionName));
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
@@ -76,6 +82,7 @@ builder.Services.PostConfigure<PhotoOptions>(options =>
         options.RootPath = Path.Combine(builder.Environment.ContentRootPath, "App_Data", "photos");
     }
 });
+builder.Services.AddScoped<IAppConfigService, AppConfigService>();
 builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<PhotoService>();
 builder.Services.AddSingleton<IUserIdProvider, AccountUserIdProvider>();
@@ -86,6 +93,17 @@ builder.Services.AddScoped<IDiscoveryService, DiscoveryService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IReferralService, ReferralService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+builder.Services.AddScoped<IPersonalInfoService, PersonalInfoService>();
+builder.Services.AddScoped<IAdminAuthService, AdminAuthService>();
+builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IAdminOpsService, AdminOpsService>();
+builder.Services.AddScoped<IAdminTrustService, AdminTrustService>();
+builder.Services.AddScoped<IAdminDeskService, AdminDeskService>();
+builder.Services.AddScoped<IAdminGrowthService, AdminGrowthService>();
+builder.Services.AddScoped<IAdminComplianceService, AdminComplianceService>();
+builder.Services.AddScoped<IAdminAppealService, AdminAppealService>();
+builder.Services.AddScoped<ISafetyService, SafetyService>();
+builder.Services.AddHostedService<AdminBootstrapHostedService>();
 
 var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
 if (string.IsNullOrWhiteSpace(jwt.SigningKey) || jwt.SigningKey.Length < 32)
@@ -121,10 +139,92 @@ builder
                 }
 
                 return Task.CompletedTask;
-            }
+            },
+            OnTokenValidated = async context =>
+            {
+                var typ = context.Principal?.FindFirst(StaffClaims.TypeClaim)?.Value;
+                if (typ != StaffClaims.TokenType) return;
+
+                var sub = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                    ?? context.Principal?.FindFirst("sub")?.Value;
+                if (!Guid.TryParse(sub, out var staffId))
+                {
+                    context.Fail("Invalid staff token subject.");
+                    return;
+                }
+
+                var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                var staff = await db.StaffUsers.AsNoTracking()
+                    .FirstOrDefaultAsync(s => s.Id == staffId, context.HttpContext.RequestAborted);
+                if (staff is null || staff.DisabledAt is not null)
+                {
+                    context.Fail("Staff session is no longer valid.");
+                    return;
+                }
+
+                if (staff.TokensValidAfter is DateTimeOffset cut)
+                {
+                    DateTimeOffset? issued = null;
+                    if (context.SecurityToken is System.IdentityModel.Tokens.Jwt.JwtSecurityToken classic)
+                    {
+                        var at = classic.IssuedAt;
+                        if (at > DateTime.UnixEpoch)
+                        {
+                            issued = at.Kind == DateTimeKind.Unspecified
+                                ? new DateTimeOffset(DateTime.SpecifyKind(at, DateTimeKind.Utc))
+                                : new DateTimeOffset(at.ToUniversalTime());
+                        }
+                    }
+                    else if (context.SecurityToken is Microsoft.IdentityModel.JsonWebTokens.JsonWebToken modern
+                             && modern.IssuedAt > DateTime.UnixEpoch)
+                    {
+                        issued = new DateTimeOffset(DateTime.SpecifyKind(modern.IssuedAt, DateTimeKind.Utc));
+                    }
+
+                    if (issued is null)
+                    {
+                        var iat =
+                            context.Principal?.FindFirst("iat")?.Value
+                            ?? context.Principal?.FindFirst(
+                                System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Iat
+                            )?.Value;
+                        if (long.TryParse(iat, out var seconds))
+                            issued = DateTimeOffset.FromUnixTimeSeconds(seconds);
+                    }
+
+                    // No issued-at → treat as pre-revoke (cannot prove freshness).
+                    if (issued is null || issued.Value <= cut)
+                    {
+                        context.Fail("Staff session was revoked. Sign in again.");
+                    }
+                }
+            },
         };
     });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(StaffClaims.PolicyName, policy =>
+        policy.RequireAuthenticatedUser()
+            .RequireClaim(StaffClaims.TypeClaim, StaffClaims.TokenType));
+
+    options.AddPolicy(StaffClaims.SupportWritePolicy, policy =>
+        policy.RequireAuthenticatedUser()
+            .RequireClaim(StaffClaims.TypeClaim, StaffClaims.TokenType)
+            .RequireAssertion(ctx =>
+                StaffRoles.CanSupportWrite(ctx.User.FindFirstValue(StaffClaims.RoleClaim))));
+
+    options.AddPolicy(StaffClaims.FinanceWritePolicy, policy =>
+        policy.RequireAuthenticatedUser()
+            .RequireClaim(StaffClaims.TypeClaim, StaffClaims.TokenType)
+            .RequireAssertion(ctx =>
+                StaffRoles.CanFinanceWrite(ctx.User.FindFirstValue(StaffClaims.RoleClaim))));
+
+    options.AddPolicy(StaffClaims.SuperadminPolicy, policy =>
+        policy.RequireAuthenticatedUser()
+            .RequireClaim(StaffClaims.TypeClaim, StaffClaims.TokenType)
+            .RequireAssertion(ctx =>
+                StaffRoles.CanSuperadminWrite(ctx.User.FindFirstValue(StaffClaims.RoleClaim))));
+});
 
 var corsSettings =
     builder.Configuration.GetSection(CorsSettings.SectionName).Get<CorsSettings>() ?? new CorsSettings();
@@ -173,6 +273,10 @@ app.MapPhotoEndpoints();
 app.MapInboxEndpoints();
 app.MapReferralEndpoints();
 app.MapSubscriptionEndpoints();
+app.MapPersonalInfoEndpoints();
+app.MapSafetyEndpoints();
+app.MapAdminEndpoints();
+AdminAppealEndpoints.MapUserAppealEndpoints(app);
 app.MapHub<ChatHub>("/v1/hubs/chat").RequireAuthorization();
 
 if (app.Environment.IsDevelopment())

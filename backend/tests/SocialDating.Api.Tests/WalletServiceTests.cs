@@ -91,10 +91,11 @@ public class WalletServiceTests : IDisposable
 
         Assert.True(charged.Ok);
         Assert.Equal(40, charged.ChargedPaisa);
-        Assert.Equal(WalletService.WelcomeBonusPoints - 40, charged.BalancePaisa);
+        var starting = WalletService.WelcomeBonusPoints + WalletService.DailyFreePointsMale;
+        Assert.Equal(starting - 40, charged.BalancePaisa);
 
         var summary = await _wallet.FetchSummaryAsync(nabin.Id, CancellationToken.None);
-        Assert.Equal(WalletService.WelcomeBonusPoints - 40, summary.PromotionalPoints);
+        Assert.Equal(starting - 40, summary.PromotionalPoints);
         Assert.Equal(0, summary.EarnedPoints);
     }
 
@@ -103,9 +104,10 @@ public class WalletServiceTests : IDisposable
     {
         var nabin = SeedPerson("Nabin", "man", "Lalitpur");
         await _db.SaveChangesAsync();
+        var starting = WalletService.WelcomeBonusPoints + WalletService.DailyFreePointsMale;
         await _wallet.TryChargeAsync(
             nabin,
-            WalletService.WelcomeBonusPoints,
+            starting,
             "messageSpend",
             "Paid message",
             "Eligible words charged at 10 paisa each.",
@@ -150,7 +152,53 @@ public class WalletServiceTests : IDisposable
         await _db.SaveChangesAsync();
 
         var summary = await _wallet.FetchSummaryAsync(nabin.Id, CancellationToken.None);
-        Assert.Equal(WalletService.WelcomeBonusPoints, summary.PromotionalPoints);
+        Assert.Equal(
+            WalletService.WelcomeBonusPoints + WalletService.DailyFreePointsMale,
+            summary.PromotionalPoints
+        );
+    }
+
+    [Fact]
+    public async Task unsubscribed_males_receive_daily_free_points_once_per_nepal_day()
+    {
+        var nabin = SeedPerson("Nabin", "man", "Lalitpur");
+        await _db.SaveChangesAsync();
+
+        var first = await _wallet.FetchSummaryAsync(nabin.Id, CancellationToken.None);
+        Assert.Equal(
+            WalletService.WelcomeBonusPoints + WalletService.DailyFreePointsMale,
+            first.PromotionalPoints
+        );
+
+        var second = await _wallet.FetchSummaryAsync(nabin.Id, CancellationToken.None);
+        Assert.Equal(first.PromotionalPoints, second.PromotionalPoints);
+        Assert.Equal(
+            2,
+            (await _wallet.FetchTransactionsAsync(nabin.Id, CancellationToken.None)).Items.Count
+        );
+    }
+
+    [Fact]
+    public async Task charge_to_admin_credits_the_admin_ledger()
+    {
+        var nabin = SeedPerson("Nabin", "man", "Lalitpur");
+        await _db.SaveChangesAsync();
+
+        var charge = await _wallet.ChargeToAdminAsync(
+            nabin,
+            WalletService.PremiumActionPricePoints,
+            "superLikeSpend",
+            "Super like",
+            "100 points for a super like.",
+            Guid.NewGuid().ToString(),
+            CancellationToken.None
+        );
+        await _db.SaveChangesAsync();
+
+        Assert.True(charge.Ok);
+        var admin = await _db.Accounts.SingleAsync(a => a.PhoneE164 == AdminAccount.PhoneE164);
+        var adminWallet = await _wallet.FetchSummaryAsync(admin.Id, CancellationToken.None);
+        Assert.Equal(WalletService.PremiumActionPricePoints, adminWallet.EarnedPoints);
     }
 
     [Fact]

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:social_dating/core/config/feature_flags.dart';
 import 'package:social_dating/core/routing/app_routes.dart';
 import 'package:social_dating/core/theme/app_icons.dart';
+import 'package:social_dating/core/utils/money.dart';
 import 'package:social_dating/core/widgets/app_bottom_nav.dart';
 import 'package:social_dating/core/widgets/circle_action_button.dart';
 import 'package:social_dating/core/widgets/image_carousel.dart';
@@ -18,6 +19,7 @@ import 'package:social_dating/data/repositories/mock_swipe_repository.dart';
 import 'package:social_dating/features/auth/providers/session_provider.dart';
 import 'package:social_dating/features/discovery/presentation/discovery_screen.dart';
 import 'package:social_dating/features/discovery/presentation/profile_detail_screen.dart';
+import 'package:social_dating/features/discovery/presentation/widgets/swipe_limit_sheet.dart';
 import 'package:social_dating/features/discovery/providers/discovery_providers.dart';
 import 'package:social_dating/features/discovery/providers/mock_discovery_providers.dart';
 import 'package:social_dating/features/matches/presentation/matches_screen.dart';
@@ -99,9 +101,8 @@ final _jordan = mockProfiles[1];
 final _riley = mockProfiles[2];
 final _sam = mockProfiles[3];
 
-Finder get _quotaText => find.textContaining('free swipes left today');
-Finder get _extraSwipesText =>
-    find.textContaining('Extra swipes NPR 0.10 each');
+SwipeQuota? _quota(WidgetTester tester) =>
+    containerOf(tester).read(discoveryControllerProvider).quota;
 
 class _FixedScenario extends MockScenarioNotifier {
   _FixedScenario(this.initial);
@@ -241,10 +242,7 @@ void main() {
 
       expect(card(_avery), findsOneWidget);
       expect(repo.swipeLog, isEmpty);
-      expect(
-        find.textContaining('20 of 20 free swipes left today'),
-        findsOneWidget,
-      );
+      expect(_quota(tester)?.freeRemaining, 20);
       // The card is back in place.
       final swipeCard = tester.state<SwipeCardState>(find.byType(SwipeCard));
       expect(swipeCard.offset, 0);
@@ -326,25 +324,23 @@ void main() {
       tester,
     ) async {
       await openDiscover(tester);
-      expect(find.text('20 of 20 free swipes left today'), findsOneWidget);
+      expect(_quota(tester)?.freeRemaining, 20);
 
       await like(tester, _avery.displayName);
-      expect(find.text('19 of 20 free swipes left today'), findsOneWidget);
+      expect(_quota(tester)?.freeRemaining, 19);
 
       await pass(tester, _riley.displayName);
-      expect(find.text('18 of 20 free swipes left today'), findsOneWidget);
+      expect(_quota(tester)?.freeRemaining, 18);
     });
 
-    testWidgets('the counter shows remaining free swipes', (tester) async {
+    testWidgets('the quota tracks remaining free swipes', (tester) async {
       await openDiscover(tester);
-      expect(find.text('20 of 20 free swipes left today'), findsOneWidget);
+      expect(_quota(tester)?.freeRemaining, 20);
     });
 
-    testWidgets('accounts without a limit see no counter and are not charged', (
-      tester,
-    ) async {
+    testWidgets('accounts without a limit are not charged', (tester) async {
       await openDiscover(tester, gender: ProfileGender.female, dailyUsed: 100);
-      expect(_quotaText, findsNothing);
+      expect(_quota(tester)?.freeDailyLimit, isNull);
       await like(tester, _jordan.displayName);
       expect(find.text('Pay for this swipe?'), findsNothing);
       expect(repo.swipeLog.single.kind, SwipeKind.free);
@@ -355,12 +351,12 @@ void main() {
   group('daily limit boundary', () {
     testWidgets('swipe 20 is free, swipe 21 asks for payment', (tester) async {
       await openDiscover(tester, dailyUsed: 19);
-      expect(find.text('1 of 20 free swipes left today'), findsOneWidget);
+      expect(_quota(tester)?.freeRemaining, 1);
 
       await like(tester, _avery.displayName);
       expect(find.text('Pay for this swipe?'), findsNothing);
       expect(repo.swipeLog.single.kind, SwipeKind.free);
-      expect(_extraSwipesText, findsOneWidget);
+      expect(_quota(tester)?.next.kind, SwipeKind.paid);
 
       await like(tester, _riley.displayName);
       expect(find.text('Pay for this swipe?'), findsOneWidget);
@@ -372,7 +368,7 @@ void main() {
       // 23:59:59 Nepal time, 14 October.
       var now = DateTime.utc(2026, 10, 14, 18, 14, 59);
       await openDiscover(tester, dailyUsed: 20, clock: () => now);
-      expect(_extraSwipesText, findsOneWidget);
+      expect(_quota(tester)?.next.kind, SwipeKind.paid);
 
       // One second later it is the next Nepal day.
       now = DateTime.utc(2026, 10, 14, 18, 15);
@@ -380,7 +376,7 @@ void main() {
 
       expect(find.text('Pay for this swipe?'), findsNothing);
       expect(repo.swipeLog.single.kind, SwipeKind.free);
-      expect(find.text('19 of 20 free swipes left today'), findsOneWidget);
+      expect(_quota(tester)?.freeRemaining, 19);
     });
 
     testWidgets('still charged one second before Nepal midnight', (
@@ -398,7 +394,7 @@ void main() {
       tester,
     ) async {
       await openDiscover(tester, session: AuthStatus.incompleteProfile);
-      expect(find.text('5 of 5 preview swipes left'), findsOneWidget);
+      expect(_quota(tester)?.previewRemaining, 5);
       // Only discovery is open: no tab bar yet.
       expect(find.byType(AppBottomNav), findsNothing);
       expect(find.text('Finish profile'), findsOneWidget);
@@ -417,12 +413,12 @@ void main() {
       expect(repo.swipeLog, hasLength(5));
     });
 
-    testWidgets('the counter counts down during the preview', (tester) async {
+    testWidgets('preview remaining counts down', (tester) async {
       await openDiscover(tester, session: AuthStatus.incompleteProfile);
       await pass(tester, _avery.displayName);
-      expect(find.text('4 of 5 preview swipes left'), findsOneWidget);
+      expect(_quota(tester)?.previewRemaining, 4);
       await like(tester, _riley.displayName);
-      expect(find.text('3 of 5 preview swipes left'), findsOneWidget);
+      expect(_quota(tester)?.previewRemaining, 3);
     });
 
     testWidgets('the gate leads to profile completion', (tester) async {
@@ -455,7 +451,7 @@ void main() {
 
       expect(find.byType(DiscoveryScreen), findsOneWidget);
       expect(find.byType(AppBottomNav), findsOneWidget);
-      expect(find.text('20 of 20 free swipes left today'), findsOneWidget);
+      expect(_quota(tester)?.freeRemaining, 20);
       expect(find.text('Finish your profile to keep swiping'), findsNothing);
     });
 
@@ -611,12 +607,18 @@ void main() {
   group('swipe limit sheet', () {
     testWidgets('explains the rules', (tester) async {
       await openDiscover(tester, dailyUsed: 6);
-      await tester.tap(_quotaText);
+      final quota = _quota(tester)!;
+      final context = tester.element(find.byType(DiscoveryScreen));
+      showSwipeLimitSheet(context, quota: quota, now: DateTime.now());
       await pumpFrames(tester);
 
       expect(find.text('Swipe limits'), findsOneWidget);
       expect(find.text('14 of 20'), findsOneWidget);
-      expect(find.text('NPR 1.00'), findsOneWidget, reason: 'wallet balance');
+      expect(
+        find.text(formatNpr(quota.balancePaisa)),
+        findsOneWidget,
+        reason: 'wallet balance',
+      );
       expect(
         find.textContaining('Left and right swipes share one count'),
         findsOneWidget,
@@ -634,7 +636,9 @@ void main() {
       tester,
     ) async {
       await openDiscover(tester, session: AuthStatus.incompleteProfile);
-      await tester.tap(find.textContaining('preview swipes left'));
+      final quota = _quota(tester)!;
+      final context = tester.element(find.byType(DiscoveryScreen));
+      showSwipeLimitSheet(context, quota: quota, now: DateTime.now());
       await pumpFrames(tester);
       expect(find.text('Swipe limits'), findsOneWidget);
       expect(
@@ -991,7 +995,7 @@ void main() {
         find.textContaining('Could not record that swipe'),
         findsOneWidget,
       );
-      expect(find.text('20 of 20 free swipes left today'), findsOneWidget);
+      expect(_quota(tester)?.freeRemaining, 20);
     });
   });
 
@@ -1084,13 +1088,13 @@ void main() {
   });
 
   group('undo', () {
-    testWidgets('is disabled by default, with a clear label', (tester) async {
+    testWidgets('stays off until there is a swipe to rewind', (tester) async {
       await openDiscover(tester);
       expect(_undoEnabled(tester), isFalse);
-      expect(_tooltip('Undo last swipe (not available yet)'), findsOneWidget);
+      expect(_tooltip('Undo last swipe'), findsOneWidget);
 
       await like(tester, _avery.displayName);
-      expect(_undoEnabled(tester), isFalse);
+      expect(_undoEnabled(tester), isTrue);
     });
 
     testWidgets('works as a labelled mock when the local flag is on', (
@@ -1109,14 +1113,14 @@ void main() {
 
       await like(tester, _avery.displayName);
       expect(_undoEnabled(tester), isTrue);
-      expect(find.text('19 of 20 free swipes left today'), findsOneWidget);
+      expect(_quota(tester)?.freeRemaining, 19);
 
       await tester.tap(_tooltip('Undo last swipe'));
       await pumpFrames(tester);
 
       expect(card(_avery), findsOneWidget);
       expect(repo.swipeLog, isEmpty);
-      expect(find.text('20 of 20 free swipes left today'), findsOneWidget);
+      expect(_quota(tester)?.freeRemaining, 20);
       expect(_undoEnabled(tester), isFalse, reason: 'only the last swipe');
     });
   });

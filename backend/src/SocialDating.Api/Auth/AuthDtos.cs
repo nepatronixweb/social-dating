@@ -18,7 +18,9 @@ public sealed record AccountStateResponse(
     bool TermsAccepted,
     bool? IsAgeEligible,
     string? DisplayName,
-    string? Gender = null
+    string? Gender = null,
+    /// <summary>null when unrestricted; else suspended, shadowBanned, or banned.</summary>
+    string? RestrictionStatus = null
 );
 
 public sealed record AuthVerifyResponse(

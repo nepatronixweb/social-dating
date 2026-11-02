@@ -2,14 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/constants/wallet_rules.dart';
 import '../../../core/routing/app_routes.dart';
 import '../../../core/theme/app_icons.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/clock_provider.dart';
-import '../../../core/utils/money.dart';
 import '../../../core/utils/responsive.dart';
-import '../../../core/utils/theme_context.dart';
 import '../../../core/widgets/app_page.dart';
 import '../../../core/widgets/app_section.dart';
 import '../../../core/widgets/app_top_bar.dart';
@@ -18,7 +15,9 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/loading_indicator.dart';
 import '../../../core/widgets/menu_tile.dart';
 import '../../../core/widgets/screen_header.dart';
+import '../../../core/errors/app_failure.dart';
 import '../../../data/models/wallet.dart';
+import '../../../data/repositories/repository_providers.dart';
 import '../providers/wallet_providers.dart';
 import 'widgets/point_balance_card.dart';
 import 'widgets/wallet_activity_tile.dart';
@@ -98,6 +97,12 @@ class WalletScreen extends ConsumerWidget {
                   children: [
                     MenuTile(
                       icon: AppIcons.referral,
+                      title: 'Redeem promo code',
+                      subtitle: 'Staff codes credit points to your wallet',
+                      onTap: () => _redeemPromo(context, ref),
+                    ),
+                    MenuTile(
+                      icon: AppIcons.referral,
                       title: 'Welcome bonus',
                       subtitle: '1,000 promotional points, not cash',
                       onTap: () => context.push(AppRoutes.walletWelcome),
@@ -123,6 +128,56 @@ class WalletScreen extends ConsumerWidget {
       ),
     );
   }
+
+  Future<void> _redeemPromo(BuildContext context, WidgetRef ref) async {
+    final controller = TextEditingController();
+    final code = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Promo code'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.characters,
+          decoration: const InputDecoration(hintText: 'Enter code'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Redeem'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (code == null || code.isEmpty || !context.mounted) return;
+
+    try {
+      final result = await ref.read(walletRepositoryProvider).redeemPromo(code);
+      ref.invalidate(walletSummaryProvider);
+      ref.invalidate(walletTransactionsProvider);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Added ${result.points} ${result.bucket} points.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      final message = error is AppFailure
+          ? error.message
+          : 'Could not redeem that code.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
 }
 
 class _OverviewBalances extends StatelessWidget {
@@ -132,10 +187,6 @@ class _OverviewBalances extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final totalEquivalent = formatNpr(
-      walletPaisaFromPoints(summary.totalPoints),
-    );
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -156,18 +207,6 @@ class _OverviewBalances extends StatelessWidget {
           footnote:
               'From eligible messaging. Only this balance could count toward '
               'a withdrawal.',
-        ),
-        AppSpacing.gapLg,
-        Text(
-          'Stated total equivalent $totalEquivalent',
-          style: context.text.titleMedium,
-        ),
-        AppSpacing.gapSm,
-        Text(
-          WalletRules.equivalentNotCash,
-          style: context.text.bodyMedium?.copyWith(
-            color: context.palette.textMuted,
-          ),
         ),
         AppSpacing.gapLg,
       ],

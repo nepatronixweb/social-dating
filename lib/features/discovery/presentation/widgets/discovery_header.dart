@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/photo_tokens.dart';
 import '../../../../core/theme/app_icons.dart';
 import '../../../../core/theme/app_motion.dart';
@@ -9,27 +8,23 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/theme_context.dart';
 import '../../../../core/widgets/brand_mark.dart';
 import '../../../notifications/presentation/notification_bell.dart';
+import '../../../wallet/presentation/widgets/points_balance_chip.dart';
 
-/// The discovery categories shown as tabs. Only [forYou] is built; the others
-/// are visible so the layout is final, and report "coming soon" when tapped.
+/// The discovery category shown in the header. Only [forYou] is available.
 enum DiscoveryCategory {
-  forYou('For You'),
-  doubleDate('Double Date'),
-  astrology('Astrology'),
-  music('Music');
+  forYou('For You');
 
   const DiscoveryCategory(this.label);
   final String label;
 }
 
-/// Header drawn over the discovery photo: brand and notifications, the category
-/// tabs with the preferences button, and the photo dots. It is always styled
+/// Header drawn over the discovery photo: brand and notifications, the For You
+/// label with the preferences button, and the photo dots. It is always styled
 /// for a dark photo, in light and dark themes alike.
 class DiscoveryHeader extends StatelessWidget {
   const DiscoveryHeader({
     super.key,
-    required this.category,
-    required this.onCategory,
+    this.category = DiscoveryCategory.forYou,
     required this.onPreferences,
     this.activeFilterCount = 0,
     this.showFinishProfile = false,
@@ -37,7 +32,6 @@ class DiscoveryHeader extends StatelessWidget {
   });
 
   final DiscoveryCategory category;
-  final ValueChanged<DiscoveryCategory> onCategory;
   final VoidCallback onPreferences;
   final int activeFilterCount;
   final bool showFinishProfile;
@@ -61,25 +55,8 @@ class DiscoveryHeader extends StatelessWidget {
             ),
             child: Row(
               children: [
-                const BrandMark(size: 22),
-                AppSpacing.gapMd,
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Semantics(
-                      header: true,
-                      child: Text(
-                        AppConstants.appName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.text.titleLarge?.copyWith(
-                          color: PhotoTokens.foreground,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                const BrandMark(size: 28),
+                const Spacer(),
                 if (showFinishProfile)
                   TextButton(
                     onPressed: onFinishProfile,
@@ -88,6 +65,7 @@ class DiscoveryHeader extends StatelessWidget {
                     ),
                     child: const Text('Finish profile'),
                   ),
+                const Flexible(child: PointsBalanceChip(onImage: true)),
                 Theme(
                   data: context.theme.copyWith(iconButtonTheme: onImageButtons),
                   child: const NotificationBell(),
@@ -100,21 +78,8 @@ class DiscoveryHeader extends StatelessWidget {
           padding: const EdgeInsets.only(left: AppSpacing.sm),
           child: Row(
             children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      for (final c in DiscoveryCategory.values)
-                        _CategoryTab(
-                          category: c,
-                          selected: c == category,
-                          onTap: () => onCategory(c),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
+              _CategoryTab(category: category),
+              const Spacer(),
               Theme(
                 data: context.theme.copyWith(iconButtonTheme: onImageButtons),
                 child: IconButton(
@@ -140,76 +105,52 @@ class DiscoveryHeader extends StatelessWidget {
 }
 
 class _CategoryTab extends StatelessWidget {
-  const _CategoryTab({
-    required this.category,
-    required this.selected,
-    required this.onTap,
-  });
+  const _CategoryTab({required this.category});
 
   final DiscoveryCategory category;
-  final bool selected;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final primary = context.colors.primary;
 
     return Semantics(
-      button: true,
-      selected: selected,
+      header: true,
       label: category.label,
-      excludeSemantics: true,
-      onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.only(right: 2),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: AppRadii.borderPill,
-          child: AnimatedContainer(
-            duration: AppMotion.resolve(context, AppMotion.fast),
-            constraints: const BoxConstraints(
-              minHeight: AppSpacing.minTouchTarget - AppSpacing.sm,
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-            decoration: BoxDecoration(
-              color: selected
-                  ? PhotoTokens.shade.withValues(alpha: 0.4)
-                  : Colors.transparent,
-              borderRadius: AppRadii.borderPill,
-              border: Border.all(
-                color: selected
-                    ? primary.withValues(alpha: 0.85)
-                    : Colors.transparent,
-              ),
-            ),
-            alignment: Alignment.center,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (selected) ...[
-                  SizedBox.square(
-                    dimension: 8,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: primary,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                  AppSpacing.gapSm,
-                ],
-                Text(
-                  category.label,
-                  maxLines: 1,
-                  style: context.text.labelMedium?.copyWith(
-                    color: PhotoTokens.foreground.withValues(
-                      alpha: selected ? 1 : 0.78,
-                    ),
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+        child: Container(
+          constraints: const BoxConstraints(
+            minHeight: AppSpacing.minTouchTarget - AppSpacing.sm,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+          decoration: BoxDecoration(
+            color: PhotoTokens.shade.withValues(alpha: 0.4),
+            borderRadius: AppRadii.borderPill,
+            border: Border.all(color: primary.withValues(alpha: 0.85)),
+          ),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox.square(
+                dimension: 8,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: primary,
+                    shape: BoxShape.circle,
                   ),
                 ),
-              ],
-            ),
+              ),
+              AppSpacing.gapSm,
+              Text(
+                category.label,
+                maxLines: 1,
+                style: context.text.labelMedium?.copyWith(
+                  color: PhotoTokens.foreground,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
         ),
       ),

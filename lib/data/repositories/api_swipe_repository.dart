@@ -71,15 +71,34 @@ class ApiSwipeRepository implements SwipeRepository {
   }
 
   @override
-  Future<UndoOutcome?> undoLast() {
-    return _withSession(() => _dio.post<dynamic>(DiscoveryApiPaths.undo), (
-      response,
-    ) {
-      if (response.statusCode == 204) return null;
-      final data = response.data;
-      if (data == null || (data is String && data.isEmpty)) return null;
-      return UndoOutcomeDto.fromJson(data).toDomain();
-    });
+  Future<UndoOutcome?> undoLast({bool confirmedPaid = false}) {
+    return _withSession(
+      () => _dio.post<dynamic>(
+        DiscoveryApiPaths.undo,
+        data: {'confirmedPaid': confirmedPaid},
+      ),
+      (response) {
+        if (response.statusCode == 204) return null;
+        final data = response.data;
+        if (data == null || (data is String && data.isEmpty)) return null;
+        return UndoOutcomeDto.fromJson(data).toDomain();
+      },
+    );
+  }
+
+  @override
+  Future<DiscoveryMessageOutcome> openDiscoveryMessage(
+    String profileId, {
+    required bool confirmedPaid,
+  }) {
+    return _withSession(
+      () => _dio.post<dynamic>(
+        DiscoveryApiPaths.message,
+        data: {'profileId': profileId, 'confirmedPaid': confirmedPaid},
+      ),
+      (response) =>
+          DiscoveryMessageOutcomeDto.fromJson(response.data).toDomain(),
+    );
   }
 
   Future<T> _withSession<T>(

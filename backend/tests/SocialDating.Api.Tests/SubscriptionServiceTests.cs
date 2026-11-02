@@ -128,14 +128,14 @@ public class SubscriptionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task paid_plans_are_listed_and_history_is_empty()
+    public async Task paid_plan_cards_are_empty_and_history_is_empty()
     {
         var nabin = SeedPerson("Nabin", "man", "Lalitpur");
         await _db.SaveChangesAsync();
 
+        // Client checkout is amount-only; named Premium plan cards are not returned.
         var plans = await _subscriptions.FetchPlansAsync(nabin.Id, CancellationToken.None);
-        Assert.Equal(2, plans.Items.Count);
-        Assert.Contains(plans.Items, p => p.Id == SubscriptionService.StandardPlanId);
+        Assert.Empty(plans.Items);
         var history = await _subscriptions.FetchHistoryAsync(nabin.Id, CancellationToken.None);
         Assert.Empty(history.Items);
     }

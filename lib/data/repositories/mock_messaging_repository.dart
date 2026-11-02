@@ -182,7 +182,7 @@ class MockMessagingRepository implements ChatRepository {
       previews.add(
         ChatPreview(
           id: chatId,
-          profile: match.profile,
+          profile: _peerProfileForViewer(match.profile),
           lastMessage: _previewText(last),
           lastMessageAt: last.sentAt,
           unreadCount: muted ? 0 : (_unread[chatId] ?? 0),
@@ -348,5 +348,23 @@ class MockMessagingRepository implements ChatRepository {
       source: MessageRules.sampleAttachmentAssets.first,
       sortOrder: 0,
     );
+  }
+
+  /// Female / LGBTQ+ / other viewers see a male peer's wallet points in chat.
+  Profile _peerProfileForViewer(Profile profile) {
+    if (!_viewerGender().canWithdrawAndSetDailyPreference) {
+      return profile.copyWith(clearSpendablePoints: true);
+    }
+    if (profile.gender != ProfileGender.male) {
+      return profile.copyWith(clearSpendablePoints: true);
+    }
+    return profile.copyWith(
+      spendablePoints: profile.spendablePoints ?? _mockMalePoints(profile.id),
+    );
+  }
+
+  static int _mockMalePoints(String id) {
+    final seed = id.codeUnits.fold(0, (sum, unit) => sum + unit);
+    return 2000 + (seed % 30) * 100;
   }
 }

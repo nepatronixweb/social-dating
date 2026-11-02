@@ -5,12 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// Set at build time, for example:
 /// `flutter run --dart-define=UNDO_SWIPE=true`
 class FeatureFlags {
-  const FeatureFlags({this.undoSwipe = false});
+  const FeatureFlags({this.undoSwipe = true});
 
-  /// Enables undoing the last swipe. Off by default: the undo control is shown
-  /// disabled. When on it is mock-only, because the server has not defined
-  /// whether undo is allowed, whether it is free, or how it affects the daily
-  /// count.
+  /// Enables undoing the last swipe. On by default. Unsubscribed males pay
+  /// 100 points for a rewind.
   final bool undoSwipe;
 
   FeatureFlags copyWith({bool? undoSwipe}) =>
@@ -19,6 +17,6 @@ class FeatureFlags {
 
 final featureFlagsProvider = Provider<FeatureFlags>(
   (ref) => const FeatureFlags(
-    undoSwipe: bool.fromEnvironment('UNDO_SWIPE', defaultValue: false),
+    undoSwipe: bool.fromEnvironment('UNDO_SWIPE', defaultValue: true),
   ),
 );

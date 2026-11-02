@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SocialDating.Api.Data;
+using SocialDating.Api.Wallet;
 
 namespace SocialDating.Api.Discovery;
 
@@ -9,6 +10,9 @@ public static class DiscoverySeeder
     {
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await AdminAccount.EnsureAsync(db, DateTimeOffset.UtcNow, ct);
+        await db.SaveChangesAsync(ct);
+
         if (!await db.Accounts.AnyAsync(a => a.PhoneE164.StartsWith("+97798110000"), ct))
         {
             await SeedDemoProfilesAsync(db, ct);

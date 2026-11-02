@@ -241,6 +241,7 @@ const List<Profile> _moreMockProfiles = [
 ];
 
 /// Fictional people who have "liked" the signed-in user.
+/// Default mock matches are men so female / LGBTQ+ viewers see them in chat.
 const List<Profile> mockLikedYou = [
   Profile(
     id: 'mock-5',
@@ -250,7 +251,9 @@ const List<Profile> mockLikedYou = [
     interests: ['Yoga', 'Travel'],
     isVerified: true,
     distanceKm: 4,
+    gender: ProfileGender.male,
     photoAssets: ['assets/portraits/avery.jpg'],
+    spendablePoints: 3200,
   ),
   Profile(
     id: 'mock-6',
@@ -259,7 +262,9 @@ const List<Profile> mockLikedYou = [
     city: 'Mockville',
     interests: ['Music', 'Coffee'],
     distanceKm: 9,
+    gender: ProfileGender.male,
     photoAssets: ['assets/portraits/jordan.jpg'],
+    spendablePoints: 4100,
   ),
   Profile(
     id: 'mock-7',
@@ -270,7 +275,9 @@ const List<Profile> mockLikedYou = [
     isVerified: true,
     isOnline: true,
     distanceKm: 2,
+    gender: ProfileGender.male,
     photoAssets: ['assets/portraits/riley.jpg'],
+    spendablePoints: 2800,
   ),
   Profile(
     id: 'mock-8',
@@ -279,7 +286,9 @@ const List<Profile> mockLikedYou = [
     city: 'Testburg',
     interests: ['Food', 'Running'],
     distanceKm: 15,
+    gender: ProfileGender.male,
     photoAssets: ['assets/portraits/sam.jpg'],
+    spendablePoints: 4610,
   ),
   Profile(
     id: 'mock-9',
@@ -288,6 +297,8 @@ const List<Profile> mockLikedYou = [
     city: 'Mockville',
     interests: ['Film', 'Books'],
     distanceKm: 6,
+    gender: ProfileGender.male,
     photoAssets: ['assets/portraits/avery.jpg'],
+    spendablePoints: 1900,
   ),
 ];
